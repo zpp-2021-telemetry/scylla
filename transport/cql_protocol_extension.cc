@@ -28,7 +28,8 @@
 namespace cql_transport {
 
 static const std::map<cql_protocol_extension, seastar::sstring> EXTENSION_NAMES = {
-    {cql_protocol_extension::LWT_ADD_METADATA_MARK, "SCYLLA_LWT_ADD_METADATA_MARK"}
+    {cql_protocol_extension::LWT_ADD_METADATA_MARK, "SCYLLA_LWT_ADD_METADATA_MARK"},
+    {cql_protocol_extension::OPENTELEMETRY_TRACING, "SCYLLA_OPENTELEMETRY_TRACING"}
 };
 
 cql_protocol_extension_enum_set supported_cql_protocol_extensions() {

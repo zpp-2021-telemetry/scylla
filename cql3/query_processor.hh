@@ -123,6 +123,7 @@ private:
     service::migration_notifier& _mnotifier;
     service::migration_manager& _mm;
     const cql_config& _cql_config;
+    bool _tracing_required = false;
 
     struct stats {
         uint64_t prepare_invocations = 0;
@@ -160,6 +161,10 @@ public:
     query_processor(service::storage_proxy& proxy, database& db, service::migration_notifier& mn, service::migration_manager& mm, memory_config mcfg, cql_config& cql_cfg);
 
     ~query_processor();
+
+    bool is_tracing_required() const {
+        return _tracing_required;
+    }
 
     database& db() {
         return _db;
@@ -411,11 +416,12 @@ private:
                 }
                 assert(bound_terms == prepared->bound_names.size());
                 return make_ready_future<std::unique_ptr<statements::prepared_statement>>(std::move(prepared));
-            }).then([&key, &id_getter, &client_state] (auto prep_ptr) {
+            }).then([&key, &id_getter, &client_state, &_tracing_required = _tracing_required] (auto prep_ptr) mutable {
                 const auto& warnings = prep_ptr->warnings;
                 const auto msg =
                         ::make_shared<ResultMsgType>(id_getter(key), std::move(prep_ptr),
                             client_state.is_protocol_extension_set(cql_transport::cql_protocol_extension::LWT_ADD_METADATA_MARK));
+                _tracing_required = client_state.is_protocol_extension_set(cql_transport::cql_protocol_extension::OPENTELEMETRY_TRACING);
                 for (const auto& w : warnings) {
                     msg->add_warning(w);
                 }
