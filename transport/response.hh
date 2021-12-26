@@ -66,6 +66,14 @@ public:
         }
     }
 
+    response(int16_t stream, cql_binary_opcode opcode, const tracing::trace_state_ptr& tr_state_ptr,
+             const std::map<sstring, bytes>& custom_payload)
+            : response(stream, opcode, tr_state_ptr)
+    {
+        write_bytes_map(custom_payload);
+        set_frame_flag(cql_frame_flags::custom_payload);
+    }
+
     void set_frame_flag(cql_frame_flags flag) noexcept {
         _flags |= flag;
     }
@@ -82,6 +90,7 @@ public:
     void write_string_list(std::vector<sstring> string_list);
     void write_bytes(bytes b);
     void write_short_bytes(bytes b);
+    void write_bytes_map(const std::map<sstring, bytes>& bytes_map);
     void write_inet(socket_address inet);
     void write_consistency(db::consistency_level c);
     void write_string_map(std::map<sstring, sstring> string_map);

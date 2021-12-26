@@ -1693,6 +1693,15 @@ void cql_server::response::write_short_bytes(bytes b)
     _body.write(b);
 }
 
+void cql_server::response::write_bytes_map(const std::map<sstring, bytes>& bytes_map)
+{
+    write_short(cast_if_fits<uint16_t>(bytes_map.size()));
+    for (auto&& s : bytes_map) {
+        write_string(s.first);
+        write_bytes(s.second);
+    }
+}
+
 void cql_server::response::write_inet(socket_address inet)
 {
     auto addr = inet.addr();
