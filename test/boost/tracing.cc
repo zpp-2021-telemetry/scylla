@@ -66,7 +66,7 @@ SEASTAR_TEST_CASE(tracing_respect_events) {
         tracing::begin(trace_state1, "begin", gms::inet_address());
 
         tracing::trace(trace_state1, "trace 1");
-        BOOST_CHECK_EQUAL(trace_state1->events_size(), 1);
+        BOOST_CHECK_EQUAL(trace_state1.get_tracing_ptr()->events_size(), 1);
         BOOST_CHECK(tracing::make_trace_info(trace_state1) != std::nullopt);
 
         // disable tracing events, it must be ignored for full tracing
@@ -77,7 +77,7 @@ SEASTAR_TEST_CASE(tracing_respect_events) {
         tracing::begin(trace_state2, "begin", gms::inet_address());
 
         tracing::trace(trace_state2, "trace 1");
-        BOOST_CHECK_EQUAL(trace_state2->events_size(), 1);
+        BOOST_CHECK_EQUAL(trace_state2.get_tracing_ptr()->events_size(), 1);
         BOOST_CHECK(tracing::make_trace_info(trace_state2) != std::nullopt);
 
         return make_ready_future<>();
@@ -101,7 +101,7 @@ SEASTAR_TEST_CASE(tracing_slow_query_fast_mode) {
 
         // check no event created
         tracing::trace(trace_state, "trace 1");
-        BOOST_CHECK_EQUAL(trace_state->events_size(), 0);
+        BOOST_CHECK_EQUAL(trace_state.get_tracing_ptr()->events_size(), 0);
         BOOST_CHECK(tracing::make_trace_info(trace_state) == std::nullopt);
 
         return make_ready_future<>();
