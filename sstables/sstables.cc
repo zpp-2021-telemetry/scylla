@@ -2286,7 +2286,7 @@ input_stream<char> sstable::data_stream(uint64_t pos, size_t len, const io_prior
     options.dynamic_adjustments = std::move(history);
 
     file f = make_tracked_file(_data_file, std::move(permit));
-    if (trace_state) {
+    if (trace_state.has_tracing()) {
         f = tracing::make_traced_file(std::move(f), std::move(trace_state), format("{}:", get_filename()));
     }
 
