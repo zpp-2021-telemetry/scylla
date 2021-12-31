@@ -61,7 +61,7 @@ public:
     {
         if (tracing::should_return_id_in_response(tr_state_ptr)) {
             auto i = _body.write_place_holder(utils::UUID::serialized_size());
-            tr_state_ptr->session_id().serialize(i);
+            tr_state_ptr.get_tracing_ptr()->session_id().serialize(i);
             set_frame_flag(cql_frame_flags::tracing);
         }
     }

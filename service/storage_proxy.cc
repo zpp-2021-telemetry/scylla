@@ -5249,7 +5249,7 @@ void storage_proxy::init_messaging_service(shared_ptr<migration_manager> mm) {
             });
         });
 
-        if (tr_state) {
+        if (tr_state.has_tracing()) {
             f = f.finally([tr_state, src_ip] {
                 tracing::trace(tr_state, "paxos_accept: handling is done, sending a response to /{}", src_ip);
             });
