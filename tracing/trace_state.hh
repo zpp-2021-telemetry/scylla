@@ -505,28 +505,113 @@ private:
     friend void stop_foreground_prepared(const trace_state_ptr& state, const cql3::query_options* prepared_options_ptr) noexcept;
 };
 
-class trace_state_ptr final {
+
+class opentelemetry_state final {
 private:
     lw_shared_ptr<trace_state> _state_ptr;
+    bool const _opentelemetry_tracing{false};
+
+public:
+    opentelemetry_state() = default;
+    opentelemetry_state(lw_shared_ptr<trace_state> state_ptr, bool opentelemetry_tracing = false)
+            : _state_ptr(std::move(state_ptr)), _opentelemetry_tracing(opentelemetry_tracing)
+    {}
+    opentelemetry_state(std::nullptr_t, bool opentelemetry_tracing = false)
+            : _state_ptr(nullptr), _opentelemetry_tracing(opentelemetry_tracing)
+    {}
+
+    /**
+     * @return True if OpenTelemetry trace state is stored.
+     */
+    bool has_opentelemetry() const noexcept {
+        return _opentelemetry_tracing;
+    };
+
+    /**
+     * @return True if classic trace state is stored.
+     */
+    bool has_tracing() const noexcept {
+        return bool(_state_ptr);
+    };
+
+    /**
+     * @return A pointer to classic trace state.
+     */
+    trace_state* get_tracing_ptr() const noexcept {
+        return _state_ptr.get();
+    }
+
+    /**
+     * @return A reference to classic trace state.
+     */
+    trace_state& get_tracing() const noexcept {
+        return *_state_ptr;
+    }
+};
+
+
+class trace_state_ptr final {
+private:
+    lw_shared_ptr<opentelemetry_state> _state_ptr;
+
+    /**
+     * @return True if classic or OpenTelemetry trace state is stored.
+     */
+    bool has_any_tracing() const noexcept {
+        return __builtin_expect(bool(_state_ptr), false);
+    }
 
 public:
     trace_state_ptr() = default;
-    trace_state_ptr(lw_shared_ptr<trace_state> state_ptr)
+    trace_state_ptr(lw_shared_ptr<opentelemetry_state> state_ptr)
         : _state_ptr(std::move(state_ptr))
+    {}
+    trace_state_ptr(lw_shared_ptr<trace_state> state_ptr)
+        : _state_ptr(make_lw_shared<opentelemetry_state>(std::move(state_ptr)))
     {}
     trace_state_ptr(std::nullptr_t)
         : _state_ptr(nullptr)
     {}
 
-    explicit operator bool() const noexcept {
-        return __builtin_expect(bool(_state_ptr), false);
+    /**
+     * @return True if classic trace state is stored.
+     */
+    bool has_tracing() const noexcept {
+        return has_any_tracing() && _state_ptr->has_tracing();
+    };
+
+    /**
+     * @return A pointer to classic trace state.
+     */
+    trace_state* get_tracing_ptr() const noexcept {
+        return _state_ptr->get_tracing_ptr();
     }
 
-    trace_state* operator->() const noexcept {
+    /**
+     * @return A reference to classic trace state.
+     */
+    trace_state& get_tracing() const noexcept {
+        return _state_ptr->get_tracing();
+    }
+
+    /**
+     * @return True if OpenTelemetry trace state is stored.
+     */
+    bool has_opentelemetry() const noexcept {
+        return has_any_tracing() && _state_ptr->has_opentelemetry();
+    };
+
+    /**
+     * @return A pointer to OpenTelemetry trace state.
+     */
+    opentelemetry_state* get_opentelemetry_ptr() const noexcept {
         return _state_ptr.get();
     }
 
-    trace_state& operator*() const noexcept {
+    /**
+     * @return A reference to OpenTelemetry trace state.
+     */
+    opentelemetry_state& get_opentelemetry() const noexcept {
         return *_state_ptr;
     }
 };
@@ -596,80 +681,80 @@ inline elapsed_clock::duration trace_state::elapsed() {
 }
 
 inline void set_page_size(const trace_state_ptr& p, int32_t val) {
-    if (p) {
-        p->set_page_size(val);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_page_size(val);
     }
 }
 
 inline void set_request_size(const trace_state_ptr& p, size_t s) noexcept {
-    if (p) {
-        p->set_request_size(s);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_request_size(s);
     }
 }
 
 inline void set_response_size(const trace_state_ptr& p, size_t s) noexcept {
-    if (p) {
-        p->set_response_size(s);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_response_size(s);
     }
 }
 
 inline void set_batchlog_endpoints(const trace_state_ptr& p, const inet_address_vector_replica_set& val) {
-    if (p) {
-        p->set_batchlog_endpoints(val);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_batchlog_endpoints(val);
     }
 }
 
 inline void set_consistency_level(const trace_state_ptr& p, db::consistency_level val) {
-    if (p) {
-        p->set_consistency_level(val);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_consistency_level(val);
     }
 }
 
 inline void set_optional_serial_consistency_level(const trace_state_ptr& p, const std::optional<db::consistency_level>& val) {
-    if (p) {
-        p->set_optional_serial_consistency_level(val);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_optional_serial_consistency_level(val);
     }
 }
 
 inline void add_query(const trace_state_ptr& p, sstring_view val) {
-    if (p) {
-        p->add_query(std::move(val));
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->add_query(std::move(val));
     }
 }
 
 inline void add_session_param(const trace_state_ptr& p, sstring_view key, sstring_view val) {
-    if (p) {
-        p->add_session_param(std::move(key), std::move(val));
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->add_session_param(std::move(key), std::move(val));
     }
 }
 
 inline void set_user_timestamp(const trace_state_ptr& p, api::timestamp_type val) {
-    if (p) {
-        p->set_user_timestamp(val);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_user_timestamp(val);
     }
 }
 
 inline void add_prepared_statement(const trace_state_ptr& p, prepared_checked_weak_ptr& prepared) {
-    if (p) {
-        p->add_prepared_statement(prepared);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->add_prepared_statement(prepared);
     }
 }
 
 inline void set_username(const trace_state_ptr& p, const std::optional<auth::authenticated_user>& user) {
-    if (p) {
-        p->set_username(user);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->set_username(user);
     }
 }
 
 inline void add_table_name(const trace_state_ptr& p, const sstring& ks_name, const sstring& cf_name) {
-    if (p) {
-        p->add_table_name(ks_name + "." + cf_name);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->add_table_name(ks_name + "." + cf_name);
     }
 }
 
 inline bool should_return_id_in_response(const trace_state_ptr& p) {
-    if (p) {
-        return p->write_on_close();
+    if (p.has_tracing()) {
+        return p.get_tracing_ptr()->write_on_close();
     }
     return false;
 }
@@ -686,8 +771,8 @@ inline bool should_return_id_in_response(const trace_state_ptr& p) {
  */
 template <typename... A>
 inline void begin(const trace_state_ptr& p, A&&... a) {
-    if (p) {
-        p->begin(std::forward<A>(a)...);
+    if (p.has_tracing()) {
+        p.get_tracing_ptr()->begin(std::forward<A>(a)...);
     }
 }
 
@@ -711,8 +796,8 @@ inline void begin(const trace_state_ptr& p, A&&... a) {
  */
 template <typename... A>
 inline void trace(const trace_state_ptr& p, A&&... a) noexcept {
-    if (p && !p->ignore_events()) {
-        p->trace(std::forward<A>(a)...);
+    if (p.has_tracing() && !p.get_tracing_ptr()->ignore_events()) {
+        p.get_tracing_ptr()->trace(std::forward<A>(a)...);
     }
 }
 
@@ -724,22 +809,26 @@ inline std::optional<trace_info> make_trace_info(const trace_state_ptr& state) {
     // When only a slow query logging is enabled we don't really care what
     // happens on a remote replica after a Client has received a response for
     // his/her query.
-    if (state && !state->ignore_events() && (state->full_tracing() || (state->log_slow_query() && !state->is_in_state(trace_state::state::background)))) {
-        return trace_info{state->session_id(), state->type(), state->write_on_close(), state->raw_props(), state->slow_query_threshold_us(), state->slow_query_ttl_sec(), state->my_span_id()};
+    if (state.has_tracing()) {
+        const auto& tr_state_ptr = state.get_tracing_ptr();
+
+        if (!tr_state_ptr->ignore_events() && (tr_state_ptr->full_tracing() || (tr_state_ptr->log_slow_query() && !tr_state_ptr->is_in_state(trace_state::state::background)))) {
+            return trace_info{tr_state_ptr->session_id(), tr_state_ptr->type(), tr_state_ptr->write_on_close(), tr_state_ptr->raw_props(), tr_state_ptr->slow_query_threshold_us(), tr_state_ptr->slow_query_ttl_sec(), tr_state_ptr->my_span_id()};
+        }
     }
 
     return std::nullopt;
 }
 
 inline void stop_foreground(const trace_state_ptr& state) noexcept {
-    if (state) {
-        state->stop_foreground_and_write();
+    if (state.has_tracing()) {
+        state.get_tracing_ptr()->stop_foreground_and_write();
     }
 }
 
 inline void add_prepared_query_options(const trace_state_ptr& state, const cql3::query_options& prepared_options_ptr) {
-    if (state) {
-        state->add_prepared_query_options(prepared_options_ptr);
+    if (state.has_tracing()) {
+        state.get_tracing_ptr()->add_prepared_query_options(prepared_options_ptr);
     }
 }
 
@@ -779,7 +868,7 @@ public:
     // May be invoked across shards.
     trace_state_ptr get() const {
         // optimize the "tracing not enabled" case
-        if (!_ptr) {
+        if (!_ptr.has_tracing()) {
             return nullptr;
         }
 
