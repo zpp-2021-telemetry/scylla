@@ -1209,9 +1209,19 @@ cql_server::connection::process_register(uint16_t stream, request_reader in, ser
     });
 }
 
+inline std::unique_ptr<cql_server::response> create_proper_response(bool tracing_required, int16_t stream, cql_binary_opcode opcode, const tracing::trace_state_ptr& tr_state_ptr) {
+    if (tracing_required) {
+        std::map<sstring, bytes> m{{"open_telemetry", tr_state_ptr.serialize()}};
+        return std::make_unique<cql_server::response>(stream, opcode, tr_state_ptr, m);
+    }
+    else {
+        return std::make_unique<cql_server::response>(stream, opcode, tr_state_ptr);
+    }
+}
+
 std::unique_ptr<cql_server::response> cql_server::connection::make_unavailable_error(int16_t stream, exceptions::exception_code err, sstring msg, db::consistency_level cl, int32_t required, int32_t alive, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_consistency(cl);
@@ -1222,7 +1232,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_unavailable_e
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_read_timeout_error(int16_t stream, exceptions::exception_code err, sstring msg, db::consistency_level cl, int32_t received, int32_t blockfor, bool data_present, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_consistency(cl);
@@ -1237,7 +1247,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_read_failure_
     if (_version < 4) {
         return make_read_timeout_error(stream, err, std::move(msg), cl, received, blockfor, data_present, tr_state);
     }
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_consistency(cl);
@@ -1250,7 +1260,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_read_failure_
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_mutation_write_timeout_error(int16_t stream, exceptions::exception_code err, sstring msg, db::consistency_level cl, int32_t received, int32_t blockfor, db::write_type type, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_consistency(cl);
@@ -1265,7 +1275,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_mutation_writ
     if (_version < 4) {
         return make_mutation_write_timeout_error(stream, err, std::move(msg), cl, received, blockfor, type, tr_state);
     }
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_consistency(cl);
@@ -1278,7 +1288,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_mutation_writ
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_already_exists_error(int16_t stream, exceptions::exception_code err, sstring msg, sstring ks_name, sstring cf_name, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_string(ks_name);
@@ -1288,7 +1298,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_already_exist
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_unprepared_error(int16_t stream, exceptions::exception_code err, sstring msg, bytes id, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_short_bytes(id);
@@ -1297,7 +1307,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_unprepared_er
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_function_failure_error(int16_t stream, exceptions::exception_code err, sstring msg, sstring ks_name, sstring func_name, std::vector<sstring> args, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     response->write_string(ks_name);
@@ -1308,7 +1318,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_function_fail
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_error(int16_t stream, exceptions::exception_code err, sstring msg, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::ERROR, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::ERROR, tr_state);
     response->write_int(static_cast<int32_t>(err));
     response->write_string(msg);
     return response;
@@ -1316,24 +1326,24 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_error(int16_t
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_ready(int16_t stream, const tracing::trace_state_ptr& tr_state) const
 {
-    return std::make_unique<cql_server::response>(stream, cql_binary_opcode::READY, tr_state);
+    return create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::READY, tr_state);
 }
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_autheticate(int16_t stream, std::string_view clz, const tracing::trace_state_ptr& tr_state) const
 {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::AUTHENTICATE, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::AUTHENTICATE, tr_state);
     response->write_string(clz);
     return response;
 }
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_auth_success(int16_t stream, bytes b, const tracing::trace_state_ptr& tr_state) const {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::AUTH_SUCCESS, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::AUTH_SUCCESS, tr_state);
     response->write_bytes(std::move(b));
     return response;
 }
 
 std::unique_ptr<cql_server::response> cql_server::connection::make_auth_challenge(int16_t stream, bytes b, const tracing::trace_state_ptr& tr_state) const {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::AUTH_CHALLENGE, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::AUTH_CHALLENGE, tr_state);
     response->write_bytes(std::move(b));
     return response;
 }
@@ -1368,7 +1378,7 @@ std::unique_ptr<cql_server::response> cql_server::connection::make_supported(int
             }
         }
     }
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::SUPPORTED, tr_state);
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), stream, cql_binary_opcode::SUPPORTED, tr_state);
     response->write_string_multimap(std::move(opts));
     return response;
 }
@@ -1449,7 +1459,7 @@ public:
 std::unique_ptr<cql_server::response>
 make_result(int16_t stream, messages::result_message& msg, const tracing::trace_state_ptr& tr_state,
         cql_protocol_version_type version, bool skip_metadata) {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::RESULT, tr_state);
+    auto response = create_proper_response(tr_state.has_opentelemetry(), stream, cql_binary_opcode::RESULT, tr_state);
     if (__builtin_expect(!msg.warnings().empty() && version > 3, false)) {
         response->set_frame_flag(cql_frame_flags::warning);
         response->write_string_list(msg.warnings());
@@ -1462,7 +1472,7 @@ make_result(int16_t stream, messages::result_message& msg, const tracing::trace_
 std::unique_ptr<cql_server::response>
 cql_server::connection::make_topology_change_event(const event::topology_change& event) const
 {
-    auto response = std::make_unique<cql_server::response>(-1, cql_binary_opcode::EVENT, tracing::trace_state_ptr());
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), -1, cql_binary_opcode::EVENT, tracing::trace_state_ptr());
     response->write_string("TOPOLOGY_CHANGE");
     response->write_string(to_string(event.change));
     response->write_inet(event.node);
@@ -1472,7 +1482,7 @@ cql_server::connection::make_topology_change_event(const event::topology_change&
 std::unique_ptr<cql_server::response>
 cql_server::connection::make_status_change_event(const event::status_change& event) const
 {
-    auto response = std::make_unique<cql_server::response>(-1, cql_binary_opcode::EVENT, tracing::trace_state_ptr());
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), -1, cql_binary_opcode::EVENT, tracing::trace_state_ptr());
     response->write_string("STATUS_CHANGE");
     response->write_string(to_string(event.status));
     response->write_inet(event.node);
@@ -1482,7 +1492,7 @@ cql_server::connection::make_status_change_event(const event::status_change& eve
 std::unique_ptr<cql_server::response>
 cql_server::connection::make_schema_change_event(const event::schema_change& event) const
 {
-    auto response = std::make_unique<cql_server::response>(-1, cql_binary_opcode::EVENT, tracing::trace_state_ptr());
+    auto response = create_proper_response(_server._query_processor.local().is_tracing_required(), -1, cql_binary_opcode::EVENT, tracing::trace_state_ptr());
     response->write_string("SCHEMA_CHANGE");
     response->serialize(event, _version);
     return response;

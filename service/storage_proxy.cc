@@ -1456,6 +1456,10 @@ storage_proxy::response_id_type storage_proxy::create_write_response_handler(key
     shared_ptr<abstract_write_response_handler> h;
     auto& rs = ks.get_replication_strategy();
 
+    if (tr_state.has_opentelemetry()) {
+        tr_state.get_opentelemetry_ptr()->set_replicas(targets);
+    }
+
     if (db::is_datacenter_local(cl)) {
         h = ::make_shared<datacenter_write_response_handler>(shared_from_this(), ks, cl, type, std::move(m), std::move(targets), pending_endpoints, std::move(dead_endpoints), std::move(tr_state), stats, std::move(permit));
     } else if (cl == db::consistency_level::EACH_QUORUM && rs.get_type() == locator::replication_strategy_type::network_topology){
