@@ -343,7 +343,7 @@ static tracing::trace_state_ptr create_tracing_session(tracing::tracing& tracing
     tracing::trace_state_props_set props;
     props.set<tracing::trace_state_props::full_tracing>();
     props.set_if<tracing::trace_state_props::log_slow_query>(tracing_instance.slow_query_tracing_enabled());
-    return tracing_instance.create_session(tracing::trace_type::QUERY, props);
+    return tracing_instance.create_session(tracing::trace_type::QUERY, props, false);
 }
 
 // truncated_content_view() prints a potentially long chunked_content for

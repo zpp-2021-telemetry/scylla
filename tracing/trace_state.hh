@@ -513,11 +513,11 @@ private:
 
 public:
     opentelemetry_state() = default;
-    opentelemetry_state(lw_shared_ptr<trace_state> state_ptr)
-        : _state_ptr(std::move(state_ptr))
+    opentelemetry_state(lw_shared_ptr<trace_state> state_ptr, bool opentelemetry_tracing = false)
+        : _state_ptr(std::move(state_ptr)), _opentelemetry_tracing(opentelemetry_tracing)
     {}
-    opentelemetry_state(std::nullptr_t)
-        : _state_ptr(nullptr)
+    opentelemetry_state(std::nullptr_t, bool opentelemetry_tracing = false)
+        : _state_ptr(nullptr), _opentelemetry_tracing(opentelemetry_tracing)
     {}
 
     /**

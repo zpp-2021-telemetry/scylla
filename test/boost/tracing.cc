@@ -62,7 +62,7 @@ SEASTAR_TEST_CASE(tracing_respect_events) {
         trace_props.set(tracing::trace_state_props::log_slow_query);
         trace_props.set(tracing::trace_state_props::full_tracing);
 
-        tracing::trace_state_ptr trace_state1 = t.create_session(tracing::trace_type::QUERY, trace_props);
+        tracing::trace_state_ptr trace_state1 = t.create_session(tracing::trace_type::QUERY, trace_props, false);
         tracing::begin(trace_state1, "begin", gms::inet_address());
 
         tracing::trace(trace_state1, "trace 1");
@@ -73,7 +73,7 @@ SEASTAR_TEST_CASE(tracing_respect_events) {
         t.set_ignore_trace_events(true);
         BOOST_CHECK(t.ignore_trace_events_enabled());
 
-        tracing::trace_state_ptr trace_state2 = t.create_session(tracing::trace_type::QUERY, trace_props);
+        tracing::trace_state_ptr trace_state2 = t.create_session(tracing::trace_type::QUERY, trace_props, false);
         tracing::begin(trace_state2, "begin", gms::inet_address());
 
         tracing::trace(trace_state2, "trace 1");
@@ -96,7 +96,7 @@ SEASTAR_TEST_CASE(tracing_slow_query_fast_mode) {
         tracing::trace_state_props_set trace_props;
         trace_props.set(tracing::trace_state_props::log_slow_query);
 
-        tracing::trace_state_ptr trace_state = t.create_session(tracing::trace_type::QUERY, trace_props);
+        tracing::trace_state_ptr trace_state = t.create_session(tracing::trace_type::QUERY, trace_props, false);
         tracing::begin(trace_state, "begin", gms::inet_address());
 
         // check no event created

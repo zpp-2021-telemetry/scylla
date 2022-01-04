@@ -385,8 +385,11 @@ future<foreign_ptr<std::unique_ptr<cql_server::response>>>
             cqlop == cql_binary_opcode::EXECUTE ||
             cqlop == cql_binary_opcode::BATCH) {
             trace_props.set_if<tracing::trace_state_props::write_on_close>(tracing_request == tracing_request_type::write_on_close);
-            trace_state = tracing::tracing::get_local_tracing_instance().create_session(tracing::trace_type::QUERY, trace_props);
+            trace_state = tracing::tracing::get_local_tracing_instance().create_session(tracing::trace_type::QUERY, trace_props, _server._query_processor.local().is_tracing_required());
         }
+    }
+    else if (_server._query_processor.local().is_tracing_required()) {
+        trace_state = tracing::trace_state_ptr{make_lw_shared<tracing::opentelemetry_state>(nullptr, true)};
     }
 
     tracing::set_request_size(trace_state, fbuf.bytes_left());
