@@ -338,4 +338,21 @@ sstring trace_state::raw_value_to_sstring(const cql3::raw_value_view& v, const d
       });
     }
 }
+
+void opentelemetry_state::serialize_replicas(bytes& serialized) const {
+    const auto size = htonl(_replicas.size());
+    const auto *size_ptr = reinterpret_cast<const int8_t*>(&size);
+    serialized += bytes{size_ptr, sizeof(size)};
+
+    for (const auto &replica : _replicas) {
+        const auto addr = replica.addr();
+
+        const auto addr_size = static_cast<uint8_t>(addr.size());
+        const auto *addr_size_ptr = reinterpret_cast<const int8_t*>(&addr_size);
+        serialized += bytes{addr_size_ptr, sizeof(addr_size)};
+
+        const auto *addr_data = static_cast<const int8_t*>(addr.data());
+        serialized += bytes{addr_data, addr_size};
+    }
+}
 }
