@@ -41,11 +41,12 @@ namespace cql_transport {
  * `docs/protocol-extensions.md`. 
  */
 enum class cql_protocol_extension {
-    LWT_ADD_METADATA_MARK
+    LWT_ADD_METADATA_MARK,
+    OPENTELEMETRY_TRACING
 };
 
 using cql_protocol_extension_enum = super_enum<cql_protocol_extension,
-    cql_protocol_extension::LWT_ADD_METADATA_MARK>;
+    cql_protocol_extension::LWT_ADD_METADATA_MARK, cql_protocol_extension::OPENTELEMETRY_TRACING>;
 
 using cql_protocol_extension_enum_set = enum_set<cql_protocol_extension_enum>;
 

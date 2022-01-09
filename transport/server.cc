@@ -378,6 +378,7 @@ future<foreign_ptr<std::unique_ptr<cql_server::response>>>
     trace_props.set_if<tracing::trace_state_props::log_slow_query>(tracing::tracing::get_local_tracing_instance().slow_query_tracing_enabled());
     trace_props.set_if<tracing::trace_state_props::full_tracing>(tracing_request != tracing_request_type::not_requested);
     tracing::trace_state_ptr trace_state;
+    auto opentelemetry_tracing = client_state.is_protocol_extension_set(cql_transport::cql_protocol_extension::OPENTELEMETRY_TRACING);
 
     if (trace_props) {
         if (cqlop == cql_binary_opcode::QUERY ||
@@ -385,8 +386,11 @@ future<foreign_ptr<std::unique_ptr<cql_server::response>>>
             cqlop == cql_binary_opcode::EXECUTE ||
             cqlop == cql_binary_opcode::BATCH) {
             trace_props.set_if<tracing::trace_state_props::write_on_close>(tracing_request == tracing_request_type::write_on_close);
-            trace_state = tracing::tracing::get_local_tracing_instance().create_session(tracing::trace_type::QUERY, trace_props);
+            trace_state = tracing::tracing::get_local_tracing_instance().create_session(tracing::trace_type::QUERY, trace_props, opentelemetry_tracing);
         }
+    }
+    else if (opentelemetry_tracing) {
+        trace_state = tracing::trace_state_ptr{make_lw_shared<tracing::opentelemetry_state>(nullptr, true)};
     }
 
     tracing::set_request_size(trace_state, fbuf.bytes_left());

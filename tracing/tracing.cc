@@ -115,22 +115,22 @@ future<> tracing::stop_tracing() {
     });
 }
 
-trace_state_ptr tracing::create_session(trace_type type, trace_state_props_set props) noexcept {
+trace_state_ptr tracing::create_session(trace_type type, trace_state_props_set props, bool opentelemetry_tracing) noexcept {
     if (!started()) {
-        return nullptr;
+        return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing) : nullptr;
     }
 
     try {
         // Don't create a session if its records are likely to be dropped
         if (!may_create_new_session()) {
-            return nullptr;
+            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing) : nullptr;
         }
 
         // Ignore events if they are disabled and this is not a full tracing request (probability tracing or user request)
         props.set_if<trace_state_props::ignore_events>(!props.contains<trace_state_props::full_tracing>() && ignore_trace_events_enabled());
 
         ++_active_sessions;
-        return make_lw_shared<trace_state>(type, props);
+        return make_lw_shared<opentelemetry_state>(make_lw_shared<trace_state>(type, props), opentelemetry_tracing);
     } catch (...) {
         // return an uninitialized state in case of any error (OOM?)
         return nullptr;
