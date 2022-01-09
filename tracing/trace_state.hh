@@ -43,6 +43,7 @@
 #include <deque>
 #include <unordered_set>
 #include <seastar/util/lazy.hh>
+#include <utility>
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/core/checked_ptr.hh>
 #include "tracing/tracing.hh"
@@ -510,6 +511,9 @@ class opentelemetry_state final {
 private:
     lw_shared_ptr<trace_state> _state_ptr;
     bool const _opentelemetry_tracing{false};
+    inet_address_vector_replica_set _replicas;
+
+    void serialize_replicas(bytes& serialized) const;
 
 public:
     opentelemetry_state() = default;
@@ -520,9 +524,24 @@ public:
             : _state_ptr(nullptr), _opentelemetry_tracing(opentelemetry_tracing)
     {}
 
+    /**
+     * @return serialized opentelemetry state.
+     */
     bytes serialize() const noexcept {
         bytes serialized{};
+
+        serialize_replicas(serialized);
+
         return serialized;
+    }
+
+    /**
+     * Store list of contacted replicas.
+     *
+     * @param replicas list of contacted replicas
+     */
+    void set_replicas(const inet_address_vector_replica_set& replicas) {
+        _replicas = replicas;
     }
 
     /**
@@ -834,6 +853,12 @@ inline void stop_foreground(const trace_state_ptr& state) noexcept {
 inline void add_prepared_query_options(const trace_state_ptr& state, const cql3::query_options& prepared_options_ptr) {
     if (state.has_tracing()) {
         state.get_tracing_ptr()->add_prepared_query_options(prepared_options_ptr);
+    }
+}
+
+inline void set_replicas(const trace_state_ptr& p, const inet_address_vector_replica_set& replicas) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->set_replicas(replicas);
     }
 }
 
