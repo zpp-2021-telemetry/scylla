@@ -485,10 +485,11 @@ public:
      *
      * @param type a tracing session type
      * @param props trace session properties set
+     * @param opentelemetry_tracing flag determining whether OpenTelemetry tracing is required
      *
      * @return tracing state handle
      */
-    trace_state_ptr create_session(trace_type type, trace_state_props_set props) noexcept;
+    trace_state_ptr create_session(trace_type type, trace_state_props_set props, bool opentelemetry_tracing) noexcept;
 
     /**
      * Create a new secondary tracing session.
