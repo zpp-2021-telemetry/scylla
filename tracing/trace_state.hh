@@ -520,6 +520,11 @@ public:
             : _state_ptr(nullptr), _opentelemetry_tracing(opentelemetry_tracing)
     {}
 
+    bytes serialize() const noexcept {
+        bytes serialized{};
+        return serialized;
+    }
+
     /**
      * @return True if OpenTelemetry trace state is stored.
      */
