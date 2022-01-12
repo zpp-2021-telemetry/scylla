@@ -64,14 +64,12 @@ public:
             tr_state_ptr.get_tracing_ptr()->session_id().serialize(i);
             set_frame_flag(cql_frame_flags::tracing);
         }
-    }
 
-    response(int16_t stream, cql_binary_opcode opcode, const tracing::trace_state_ptr& tr_state_ptr,
-             const std::map<sstring, bytes>& custom_payload)
-            : response(stream, opcode, tr_state_ptr)
-    {
-        write_bytes_map(custom_payload);
-        set_frame_flag(cql_frame_flags::custom_payload);
+        if (tr_state_ptr.has_opentelemetry()) {
+            std::map<sstring, bytes> custom_payload{{"opentelemetry", tr_state_ptr.get_opentelemetry_ptr()->serialize()}};
+            write_bytes_map(custom_payload);
+            set_frame_flag(cql_frame_flags::custom_payload);
+        }
     }
 
     void set_frame_flag(cql_frame_flags flag) noexcept {
