@@ -32,6 +32,7 @@ namespace messages {
 
 class result_message {
     std::vector<sstring> _warnings;
+    std::map<sstring, bytes> _custom_payload;
 public:
     class visitor;
     class visitor_base;
@@ -46,6 +47,14 @@ public:
 
     const std::vector<sstring>& warnings() const {
         return _warnings;
+    }
+
+    void add_to_custom_payload(sstring key, bytes val) {
+        _custom_payload[key] = val;
+    }
+
+    const std::map<sstring, bytes>& custom_payload() const {
+        return _custom_payload;
     }
 
     virtual std::optional<unsigned> move_to_shard() const {

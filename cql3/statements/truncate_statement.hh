@@ -68,6 +68,10 @@ public:
 
     virtual future<::shared_ptr<cql_transport::messages::result_message>>
     execute(query_processor& qp, service::query_state& state, const query_options& options) const override;
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::TRUNCATE;
+    }
 };
 
 }

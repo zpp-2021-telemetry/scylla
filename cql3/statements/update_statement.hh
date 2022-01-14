@@ -65,6 +65,11 @@ public:
             schema_ptr s,
             std::unique_ptr<attributes> attrs,
             cql_stats& stats);
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::UPDATE;
+    }
+
 private:
     virtual bool require_full_clustering_key() const override;
 

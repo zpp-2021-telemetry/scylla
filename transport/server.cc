@@ -1446,7 +1446,9 @@ public:
 std::unique_ptr<cql_server::response>
 make_result(int16_t stream, messages::result_message& msg, const tracing::trace_state_ptr& tr_state,
         cql_protocol_version_type version, bool skip_metadata) {
-    auto response = std::make_unique<cql_server::response>(stream, cql_binary_opcode::RESULT, tr_state);
+    auto response = (msg.custom_payload().empty()) ?
+        std::make_unique<cql_server::response>(stream, cql_binary_opcode::RESULT, tr_state) :
+        std::make_unique<cql_server::response>(stream, cql_binary_opcode::RESULT, tr_state, msg.custom_payload());
     if (__builtin_expect(!msg.warnings().empty() && version > 3, false)) {
         response->set_frame_flag(cql_frame_flags::warning);
         response->write_string_list(msg.warnings());

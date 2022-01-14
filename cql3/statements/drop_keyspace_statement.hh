@@ -64,6 +64,10 @@ public:
     virtual future<shared_ptr<cql_transport::event::schema_change>> announce_migration(query_processor& qp) const override;
 
     virtual std::unique_ptr<prepared_statement> prepare(database& db, cql_stats& stats) override;
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::DROP_KEYSPACE;
+    }
 };
 
 }

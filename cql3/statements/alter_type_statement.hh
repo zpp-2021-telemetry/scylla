@@ -72,6 +72,10 @@ public:
 
     virtual future<shared_ptr<cql_transport::event::schema_change>> announce_migration(query_processor& qp) const override;
 
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::ALTER_TYPE;
+    }
+
     class add_or_alter;
     class renames;
 protected:

@@ -54,6 +54,10 @@ public:
     create_function_statement(functions::function_name name, sstring language, sstring body,
             std::vector<shared_ptr<column_identifier>> arg_names, std::vector<shared_ptr<cql3_type::raw>> arg_types,
             shared_ptr<cql3_type::raw> return_type, bool called_on_null_input, bool or_replace, bool if_not_exists);
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::CREATE_FUNCTION;
+    }
 };
 }
 }

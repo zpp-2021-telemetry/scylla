@@ -412,6 +412,8 @@ private:
                 assert(bound_terms == prepared->bound_names.size());
                 return make_ready_future<std::unique_ptr<statements::prepared_statement>>(std::move(prepared));
             }).then([&key, &id_getter, &client_state] (auto prep_ptr) {
+                auto* statement = prep_ptr->statement.get();
+                bytes statement_type_bytes = serialized(cql_statement::cql_statement_type_name(statement->get_statement_type()));
                 const auto& warnings = prep_ptr->warnings;
                 const auto msg =
                         ::make_shared<ResultMsgType>(id_getter(key), std::move(prep_ptr),
@@ -419,6 +421,7 @@ private:
                 for (const auto& w : warnings) {
                     msg->add_warning(w);
                 }
+                msg->add_to_custom_payload(sstring("db.operation"), statement_type_bytes);
                 return make_ready_future<::shared_ptr<cql_transport::messages::result_message::prepared>>(std::move(msg));
             }).handle_exception_type([&query_string] (typename prepared_statements_cache::statement_is_too_big&) {
                 return make_exception_future<::shared_ptr<cql_transport::messages::result_message::prepared>>(

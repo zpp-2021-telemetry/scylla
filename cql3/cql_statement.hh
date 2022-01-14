@@ -118,6 +118,100 @@ public:
     virtual bool is_conditional() const {
         return false;
     }
+
+    enum class cql_statement_type {
+        ALTER_ROLE,
+        CREATE_ROLE,
+        DROP_ROLE,
+        LIST_USERS,
+        GRANT_ROLE,
+        LIST_PERMISSIONS,
+        LIST_ROLES,
+        GRANT,
+        REVOKE,
+        REVOKE_ROLE,
+        ALTER_KEYSPACE,
+        ALTER_TABLE,
+        ALTER_TYPE,
+        ALTER_VIEW,
+        CREATE_INDEX,
+        CREATE_KEYSPACE,
+        CREATE_TABLE,
+        CREATE_TYPE,
+        CREATE_VIEW,
+        DROP_INDEX,
+        DROP_KEYSPACE,
+        DROP_TABLE,
+        DROP_TYPE,
+        DROP_VIEW,
+        CREATE_FUNCTION,
+        CREATE_AGGREGATE,
+        DROP_FUNCTION,
+        DROP_AGGREGATE,
+        ALTER_SERVICE_LEVEL,
+        ATTACH_SERVICE_LEVEL,
+        CREATE_SERVICE_LEVEL,
+        DETACH_SERVICE_LEVEL,
+        DROP_SERVICE_LEVEL,
+        LIST_SERVICE_LEVEL_ATTACHMENTS,
+        LIST_SERVICE_LEVEL,
+        TRUNCATE,
+        USE,
+        PRIMARY_KEY_SELECT,
+        INDEXED_TABLE_SELECT,
+        UPDATE,
+        DELETE,
+        BATCH
+    };
+
+    static seastar::sstring cql_statement_type_name(cql_statement_type st) {
+        switch (st) {
+            case cql_statement_type::ALTER_ROLE: return "ALTER_ROLE";
+            case cql_statement_type::CREATE_ROLE: return "CREATE_ROLE";
+            case cql_statement_type::DROP_ROLE: return "DROP_ROLE";
+            case cql_statement_type::LIST_USERS: return "LIST_USERS";
+            case cql_statement_type::GRANT_ROLE: return "GRANT_ROLE";
+            case cql_statement_type::LIST_PERMISSIONS: return "LIST_PERMISSIONS";
+            case cql_statement_type::LIST_ROLES: return "LIST_ROLES";
+            case cql_statement_type::GRANT: return "GRANT";
+            case cql_statement_type::REVOKE: return "REVOKE";
+            case cql_statement_type::REVOKE_ROLE: return "REVOKE_ROLE";
+            case cql_statement_type::ALTER_KEYSPACE: return "ALTER_KEYSPACE";
+            case cql_statement_type::ALTER_TABLE: return "ALTER_TABLE";
+            case cql_statement_type::ALTER_TYPE: return "ALTER_TYPE";
+            case cql_statement_type::ALTER_VIEW: return "ALTER_VIEW";
+            case cql_statement_type::CREATE_INDEX: return "CREATE_INDEX";
+            case cql_statement_type::CREATE_KEYSPACE: return "CREATE_KEYSPACE";
+            case cql_statement_type::CREATE_TABLE: return "CREATE_TABLE";
+            case cql_statement_type::CREATE_TYPE: return "CREATE_TYPE";
+            case cql_statement_type::CREATE_VIEW: return "CREATE_VIEW";
+            case cql_statement_type::DROP_INDEX: return "DROP_INDEX";
+            case cql_statement_type::DROP_KEYSPACE: return "DROP_KEYSPACE";
+            case cql_statement_type::DROP_TABLE: return "DROP_TABLE";
+            case cql_statement_type::DROP_TYPE: return "DROP_TYPE";
+            case cql_statement_type::DROP_VIEW: return "DROP_VIEW";
+            case cql_statement_type::CREATE_FUNCTION: return "CREATE_FUNCTION";
+            case cql_statement_type::CREATE_AGGREGATE: return "CREATE_AGGREGATE";
+            case cql_statement_type::DROP_FUNCTION: return "DROP_FUNCTION";
+            case cql_statement_type::DROP_AGGREGATE: return "DROP_AGGREGATE";
+            case cql_statement_type::ALTER_SERVICE_LEVEL: return "ALTER_SERVICE_LEVEL";
+            case cql_statement_type::ATTACH_SERVICE_LEVEL: return "ATTACH_SERVICE_LEVEL";
+            case cql_statement_type::CREATE_SERVICE_LEVEL: return "CREATE_SERVICE_LEVEL";
+            case cql_statement_type::DETACH_SERVICE_LEVEL: return "DETACH_SERVICE_LEVEL";
+            case cql_statement_type::DROP_SERVICE_LEVEL: return "DROP_SERVICE_LEVEL";
+            case cql_statement_type::LIST_SERVICE_LEVEL_ATTACHMENTS: return "LIST_SERVICE_LEVEL_ATTACHMENTS";
+            case cql_statement_type::LIST_SERVICE_LEVEL: return "LIST_SERVICE_LEVEL";
+            case cql_statement_type::TRUNCATE: return "TRUNCATE";
+            case cql_statement_type::USE: return "USE";
+            case cql_statement_type::PRIMARY_KEY_SELECT: return "PRIMARY_KEY_SELECT";
+            case cql_statement_type::INDEXED_TABLE_SELECT: return "INDEXED_TABLE_SELECT";
+            case cql_statement_type::UPDATE: return "UPDATE";
+            case cql_statement_type::DELETE: return "DELETE";
+            case cql_statement_type::BATCH: return "BATCH";
+        }
+    }
+
+    virtual cql_statement_type get_statement_type() const = 0;
 };
 
 class cql_statement_no_metadata : public cql_statement {
