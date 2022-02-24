@@ -837,8 +837,17 @@ inline std::optional<trace_info> make_trace_info(const trace_state_ptr& state) {
         const auto& tr_state_ptr = state.get_tracing_ptr();
 
         if (!tr_state_ptr->ignore_events() && (tr_state_ptr->full_tracing() || (tr_state_ptr->log_slow_query() && !tr_state_ptr->is_in_state(trace_state::state::background)))) {
-            return trace_info{tr_state_ptr->session_id(), tr_state_ptr->type(), tr_state_ptr->write_on_close(), tr_state_ptr->raw_props(), tr_state_ptr->slow_query_threshold_us(), tr_state_ptr->slow_query_ttl_sec(), tr_state_ptr->my_span_id()};
+            auto props = tr_state_ptr->raw_props();
+            props.set(trace_state_props::classic);
+            props.set_if<trace_state_props::opentelemetry>(state.has_opentelemetry());
+            return trace_info{tr_state_ptr->session_id(), tr_state_ptr->type(), tr_state_ptr->write_on_close(), props, tr_state_ptr->slow_query_threshold_us(), tr_state_ptr->slow_query_ttl_sec(), tr_state_ptr->my_span_id()};
         }
+    }
+
+    if (state.has_opentelemetry()) {
+        trace_state_props_set props{};
+        props.set(trace_state_props::opentelemetry);
+        return trace_info{props};
     }
 
     return std::nullopt;
@@ -898,7 +907,7 @@ public:
     // May be invoked across shards.
     trace_state_ptr get() const {
         // optimize the "tracing not enabled" case
-        if (!_ptr.has_tracing()) {
+        if (!_ptr.has_tracing() && !_ptr.has_opentelemetry()) {
             return nullptr;
         }
 
