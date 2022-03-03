@@ -314,7 +314,7 @@ public:
     prepare(sstring query_string, service::query_state& query_state);
 
     future<::shared_ptr<cql_transport::messages::result_message::prepared>>
-    prepare(sstring query_string, const service::client_state& client_state, bool for_thrift);
+    prepare(sstring query_string, const service::client_state& client_state, bool for_thrift, tracing::trace_state_ptr trace_state);
 
     future<> stop();
 
@@ -395,12 +395,13 @@ private:
             sstring query_string,
             const service::client_state& client_state,
             PreparedKeyGenerator&& id_gen,
-            IdGetter&& id_getter) {
+            IdGetter&& id_getter,
+            tracing::trace_state_ptr trace_state) {
         return do_with(
                 id_gen(query_string, client_state.get_raw_keyspace()),
                 std::move(query_string),
-                [this, &client_state, &id_getter](const prepared_cache_key_type& key, const sstring& query_string) {
-            return _prepared_cache.get(key, [this, &query_string, &client_state] {
+                [this, &client_state, &id_getter, trace_state](const prepared_cache_key_type& key, const sstring& query_string) {
+            return _prepared_cache.get(key, [this, &query_string, &client_state, trace_state] {
                 auto prepared = get_statement(query_string, client_state);
                 auto bound_terms = prepared->statement->get_bound_terms();
                 if (bound_terms > std::numeric_limits<uint16_t>::max()) {
@@ -411,7 +412,10 @@ private:
                 }
                 assert(bound_terms == prepared->bound_names.size());
                 return make_ready_future<std::unique_ptr<statements::prepared_statement>>(std::move(prepared));
-            }).then([&key, &id_getter, &client_state] (auto prep_ptr) {
+            }).then([&key, &id_getter, &client_state, trace_state] (auto prep_ptr) {
+                auto* statement = prep_ptr->statement.get();
+                sstring statement_type = cql_statement::cql_statement_type_name(statement->get_statement_type());
+                tracing::set_statement_type(trace_state, statement_type);
                 const auto& warnings = prep_ptr->warnings;
                 const auto msg =
                         ::make_shared<ResultMsgType>(id_getter(key), std::move(prep_ptr),

@@ -512,8 +512,10 @@ private:
     lw_shared_ptr<trace_state> _state_ptr;
     bool const _opentelemetry_tracing{false};
     inet_address_vector_replica_set _replicas;
+    sstring _statement_type;
 
     void serialize_replicas(bytes& serialized) const;
+    void serialize_statement_type(bytes& serialized) const;
 
 public:
     opentelemetry_state() = default;
@@ -531,6 +533,7 @@ public:
         bytes serialized{};
 
         serialize_replicas(serialized);
+        serialize_statement_type(serialized);
 
         return serialized;
     }
@@ -542,6 +545,15 @@ public:
      */
     void set_replicas(const inet_address_vector_replica_set& replicas) {
         _replicas = replicas;
+    }
+
+    /**
+     * Store type of prepared statement.
+     *
+     * @param statement_type type of prepared statement.
+     */
+    void set_statement_type(const sstring& statement_type) {
+        _statement_type = statement_type;
     }
 
     /**
@@ -859,6 +871,12 @@ inline void add_prepared_query_options(const trace_state_ptr& state, const cql3:
 inline void set_replicas(const trace_state_ptr& p, const inet_address_vector_replica_set& replicas) {
     if (p.has_opentelemetry()) {
         p.get_opentelemetry_ptr()->set_replicas(replicas);
+    }
+}
+
+inline void set_statement_type(const trace_state_ptr& p, const sstring& statement_type) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->set_statement_type(statement_type);
     }
 }
 

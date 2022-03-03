@@ -67,7 +67,7 @@ future<> table_helper::cache_table_info(cql3::query_processor& qp, service::quer
         return now();
     }
 
-    return qp.prepare(_insert_cql, qs.get_client_state(), false)
+    return qp.prepare(_insert_cql, qs.get_client_state(), false, qs.get_trace_state())
             .then([this] (shared_ptr<cql_transport::messages::result_message::prepared> msg_ptr) noexcept {
         _prepared_stmt = std::move(msg_ptr->get_prepared());
         shared_ptr<cql3::cql_statement> cql_stmt = _prepared_stmt->statement;
@@ -82,7 +82,7 @@ future<> table_helper::cache_table_info(cql3::query_processor& qp, service::quer
             // we have already prepared the fallback statement
             return now();
         }
-        return qp.prepare(_insert_cql_fallback.value(), qs.get_client_state(), false)
+        return qp.prepare(_insert_cql_fallback.value(), qs.get_client_state(), false, qs.get_trace_state())
                 .then([this] (shared_ptr<cql_transport::messages::result_message::prepared> msg_ptr) noexcept {
             _prepared_stmt = std::move(msg_ptr->get_prepared());
             shared_ptr<cql3::cql_statement> cql_stmt = _prepared_stmt->statement;

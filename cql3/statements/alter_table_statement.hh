@@ -69,6 +69,11 @@ public:
         shared_ptr<cql3_type::raw> validator = nullptr;
         bool is_static = false;
     };
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::ALTER_TABLE;
+    }
+
 private:
     const type _type;
     const std::vector<column_change> _column_changes;

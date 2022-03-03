@@ -51,6 +51,10 @@ class create_aggregate_statement final : public create_function_statement_base {
 public:
     create_aggregate_statement(functions::function_name name, std::vector<shared_ptr<cql3_type::raw>> arg_types,
             sstring sfunc, shared_ptr<cql3_type::raw> stype, sstring ffunc, expr::expression ival, bool or_replace, bool if_not_exists);
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::CREATE_AGGREGATE;
+    }
 };
 }
 }

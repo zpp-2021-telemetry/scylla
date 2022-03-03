@@ -186,6 +186,10 @@ public:
                      std::optional<expr::expression> per_partition_limit,
                      cql_stats &stats,
                      std::unique_ptr<cql3::attributes> attrs);
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::PRIMARY_KEY_SELECT;
+    }
 };
 
 class indexed_table_select_statement : public select_statement {
@@ -226,6 +230,10 @@ public:
                                    ::shared_ptr<restrictions::restrictions> used_index_restrictions,
                                    schema_ptr view_schema,
                                    std::unique_ptr<cql3::attributes> attrs);
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::INDEXED_TABLE_SELECT;
+    }
 
 private:
     virtual future<::shared_ptr<cql_transport::messages::result_message>> do_execute(service::storage_proxy& proxy,

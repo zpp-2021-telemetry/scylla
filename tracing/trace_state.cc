@@ -355,4 +355,8 @@ void opentelemetry_state::serialize_replicas(bytes& serialized) const {
         serialized += bytes{addr_data, addr_size};
     }
 }
+
+void opentelemetry_state::serialize_statement_type(bytes& serialized) const {
+    serialized += bytes{reinterpret_cast<const signed char*>(_statement_type.c_str()), _statement_type.length()};
+}
 }

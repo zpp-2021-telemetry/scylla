@@ -39,6 +39,10 @@ public:
     virtual future<> check_access(service::storage_proxy& sp, const service::client_state&) const override;
     virtual future<::shared_ptr<cql_transport::messages::result_message>>
     execute(query_processor&, service::query_state&, const query_options&) const override;
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::DROP_SERVICE_LEVEL;
+    }
 };
 
 }
