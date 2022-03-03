@@ -741,6 +741,7 @@ row_cache::do_make_reader(schema_ptr s,
     if (query::is_single_partition(range) && !fwd_mr) {
         tracing::trace(trace_state, "Querying cache for range {} and slice {}",
                 range, seastar::value_of([&slice] { return slice.get_all_ranges(); }));
+        modify_cache_counter(trace_state, 1);
         return _read_section(_tracker.region(), [&] {
             dht::ring_position_comparator cmp(*_schema);
             auto&& pos = range.start()->value();
@@ -756,6 +757,7 @@ row_cache::do_make_reader(schema_ptr s,
             } else {
                 tracing::trace(trace_state, "Range {} not found in cache", range);
                 on_partition_miss();
+                modify_cache_counter(trace_state, -1);
                 return make_flat_mutation_reader<single_partition_populating_reader>(*this, make_context());
             }
         });

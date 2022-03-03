@@ -508,10 +508,15 @@ private:
 
 
 class opentelemetry_state final {
+public:
+    using cache_counter_t = int32_t;
+
 private:
     lw_shared_ptr<trace_state> _state_ptr;
     bool const _opentelemetry_tracing{false};
     inet_address_vector_replica_set _replicas;
+    // Number of read partitions that were found in cache.
+    cache_counter_t _cache_counter{0};
 
     void serialize_replicas(bytes& serialized) const;
 
@@ -542,6 +547,22 @@ public:
      */
     void set_replicas(const inet_address_vector_replica_set& replicas) {
         _replicas = replicas;
+    }
+
+    /**
+     * Increment counter of partitions read from cache.
+     *
+     * @param count number of partitions
+     */
+    void modify_cache_counter(cache_counter_t count) {
+        _cache_counter += count;
+    }
+
+    /**
+     * @return number of partitions that were found in cache
+     */
+    cache_counter_t get_cache_counter() const {
+        return _cache_counter;
     }
 
     /**
@@ -596,6 +617,8 @@ public:
     trace_state_ptr(std::nullptr_t)
         : _state_ptr(nullptr)
     {}
+
+    using cache_counter_t = opentelemetry_state::cache_counter_t;
 
     /**
      * @return True if classic trace state is stored.
@@ -869,6 +892,20 @@ inline void set_replicas(const trace_state_ptr& p, const inet_address_vector_rep
     if (p.has_opentelemetry()) {
         p.get_opentelemetry_ptr()->set_replicas(replicas);
     }
+}
+
+inline void modify_cache_counter(const trace_state_ptr& p, trace_state_ptr::cache_counter_t count) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->modify_cache_counter(count);
+    }
+}
+
+inline trace_state_ptr::cache_counter_t get_cache_counter(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->get_cache_counter();
+    }
+
+    return 0;
 }
 
 // global_trace_state_ptr is a helper class that may be used for creating spans
