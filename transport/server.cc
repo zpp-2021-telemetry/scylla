@@ -962,17 +962,17 @@ future<std::unique_ptr<cql_server::response>> cql_server::connection::process_pr
 
     auto cpu_id = this_shard_id();
     auto cpus = boost::irange(0u, smp::count);
-    return parallel_for_each(cpus.begin(), cpus.end(), [this, query, cpu_id, &client_state] (unsigned int c) mutable {
+    return parallel_for_each(cpus.begin(), cpus.end(), [this, query, cpu_id, &client_state, trace_state] (unsigned int c) mutable {
         if (c != cpu_id) {
-            return smp::submit_to(c, [this, query, &client_state] () mutable {
-                return _server._query_processor.local().prepare(std::move(query), client_state, false).discard_result();
+            return smp::submit_to(c, [this, query, &client_state, trace_state] () mutable {
+                return _server._query_processor.local().prepare(std::move(query), client_state, false, trace_state).discard_result();
             });
         } else {
             return make_ready_future<>();
         }
     }).then([this, query, stream, &client_state, trace_state] () mutable {
         tracing::trace(trace_state, "Done preparing on remote shards");
-        return _server._query_processor.local().prepare(std::move(query), client_state, false).then([this, stream, &client_state, trace_state] (auto msg) {
+        return _server._query_processor.local().prepare(std::move(query), client_state, false, trace_state).then([this, stream, &client_state, trace_state] (auto msg) {
             tracing::trace(trace_state, "Done preparing on a local shard - preparing a result. ID is [{}]", seastar::value_of([&msg] {
                 return messages::result_message::prepared::cql::get_id(msg);
             }));

@@ -74,6 +74,10 @@ public:
 
     static void check_for_duplicate_names(user_type type);
 
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::CREATE_TYPE;
+    }
+
 private:
     bool type_exists_in(::keyspace& ks) const;
 

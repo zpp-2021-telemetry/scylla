@@ -78,6 +78,11 @@ public:
             , needs_authorization(na)
         {}
     };
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::BATCH;
+    }
+
 private:
     int _bound_terms;
     type _type;

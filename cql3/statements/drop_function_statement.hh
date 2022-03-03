@@ -34,6 +34,10 @@ class drop_function_statement final : public drop_function_statement_base {
 public:
     drop_function_statement(functions::function_name name, std::vector<shared_ptr<cql3_type::raw>> arg_types,
             bool args_present, bool if_exists);
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::DROP_FUNCTION;
+    }
 };
 }
 }

@@ -114,6 +114,10 @@ public:
 
     schema_ptr get_cf_meta_data(const database&) const;
 
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::CREATE_TABLE;
+    }
+
     class raw_statement;
 
     friend raw_statement;

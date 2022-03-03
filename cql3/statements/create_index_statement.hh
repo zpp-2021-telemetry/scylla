@@ -81,6 +81,11 @@ public:
     future<::shared_ptr<cql_transport::event::schema_change>> announce_migration(query_processor&) const override;
 
     virtual std::unique_ptr<prepared_statement> prepare(database& db, cql_stats& stats) override;
+
+    inline cql_statement::cql_statement_type get_statement_type() const override {
+        return cql_statement::cql_statement_type::CREATE_INDEX;
+    }
+
 private:
     void validate_for_local_index(const schema& schema) const;
     void validate_for_frozen_collection(const index_target& target) const;
