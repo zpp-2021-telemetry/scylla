@@ -5101,6 +5101,15 @@ void storage_proxy::init_messaging_service(shared_ptr<migration_manager> mm) {
             trace_state_ptr = tracing::tracing::get_local_tracing_instance().create_session(*cmd.trace_info);
             tracing::begin(trace_state_ptr);
             tracing::trace(trace_state_ptr, "read_data: message received from /{}", src_addr.addr);
+            if (trace_state_ptr.has_opentelemetry()) {
+                printf("OpenTelemetry tracing on.");
+            }
+            else {
+                printf("No OpenTelemetry tracing.");
+            }
+        }
+        else {
+            printf("No tracing at all.");
         }
         auto da = oda.value_or(query::digest_algorithm::MD5);
         auto sp = get_local_shared_storage_proxy();
