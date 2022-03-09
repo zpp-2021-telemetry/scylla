@@ -355,4 +355,10 @@ void opentelemetry_state::serialize_replicas(bytes& serialized) const {
         serialized += bytes{addr_data, addr_size};
     }
 }
+
+void opentelemetry_state::serialize_cache_counter(bytes& serialized) const {
+    const auto counter = htonl(_cache_counter);
+    const auto *counter_ptr = reinterpret_cast<const int8_t*>(&counter);
+    serialized += bytes{counter_ptr, sizeof(counter)};
+}
 }
