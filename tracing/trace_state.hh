@@ -521,6 +521,7 @@ private:
 
     void serialize_replicas(bytes& serialized) const;
     void serialize_statement_type(bytes& serialized) const;
+    void serialize_cache_counter(bytes& serialized) const;
 
 public:
     opentelemetry_state() = default;
@@ -538,6 +539,7 @@ public:
         bytes serialized{};
 
         serialize_replicas(serialized);
+        serialize_cache_counter(serialized);
         serialize_statement_type(serialized);
 
         return serialized;
