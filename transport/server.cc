@@ -395,133 +395,138 @@ future<foreign_ptr<std::unique_ptr<cql_server::response>>>
 
     tracing::set_request_size(trace_state, fbuf.bytes_left());
 
-    auto linearization_buffer = std::make_unique<bytes_ostream>();
-    auto linearization_buffer_ptr = linearization_buffer.get();
-    return futurize_invoke([this, cqlop, stream, &fbuf, &client_state, linearization_buffer_ptr, permit = std::move(permit), trace_state] () mutable {
-        // When using authentication, we need to ensure we are doing proper state transitions,
-        // i.e. we cannot simply accept any query/exec ops unless auth is complete
-        switch (client_state.get_auth_state()) {
-            case auth_state::UNINITIALIZED:
-                if (cqlop != cql_binary_opcode::STARTUP && cqlop != cql_binary_opcode::OPTIONS) {
-                    throw exceptions::protocol_exception(format("Unexpected message {:d}, expecting STARTUP or OPTIONS", int(cqlop)));
-                }
-                break;
-            case auth_state::AUTHENTICATION:
-                // Support both SASL auth from protocol v2 and the older style Credentials auth from v1
-                if (cqlop != cql_binary_opcode::AUTH_RESPONSE && cqlop != cql_binary_opcode::CREDENTIALS) {
-                    throw exceptions::protocol_exception(format("Unexpected message {:d}, expecting {}", int(cqlop), _version == 1 ? "CREDENTIALS" : "SASL_RESPONSE"));
-                }
-                break;
-            case auth_state::READY: default:
-                if (cqlop == cql_binary_opcode::STARTUP) {
-                    throw exceptions::protocol_exception("Unexpected message STARTUP, the connection is already initialized");
-                }
-                break;
-        }
+    return tracing::start(trace_state).then([this, cqlop, stream, fbuf, &client_state, permit = std::move(permit), trace_state] () mutable {
+        auto linearization_buffer = std::make_unique<bytes_ostream>();
+        auto linearization_buffer_ptr = linearization_buffer.get();
 
-        tracing::set_username(trace_state, client_state.user());
-
-        auto wrap_in_foreign = [] (future<std::unique_ptr<cql_server::response>> f) {
-            return f.then([] (std::unique_ptr<cql_server::response> p) {
-                return make_ready_future<foreign_ptr<std::unique_ptr<cql_server::response>>>(make_foreign(std::move(p)));
-            });
-        };
-        auto in = request_reader(std::move(fbuf), *linearization_buffer_ptr);
-        switch (cqlop) {
-        case cql_binary_opcode::STARTUP:       return wrap_in_foreign(process_startup(stream, std::move(in), client_state, trace_state));
-        case cql_binary_opcode::AUTH_RESPONSE: return wrap_in_foreign(process_auth_response(stream, std::move(in), client_state, trace_state));
-        case cql_binary_opcode::OPTIONS:       return wrap_in_foreign(process_options(stream, std::move(in), client_state, trace_state));
-        case cql_binary_opcode::QUERY:         return process_query(stream, std::move(in), client_state, std::move(permit), trace_state);
-        case cql_binary_opcode::PREPARE:       return wrap_in_foreign(process_prepare(stream, std::move(in), client_state, trace_state));
-        case cql_binary_opcode::EXECUTE:       return process_execute(stream, std::move(in), client_state, std::move(permit), trace_state);
-        case cql_binary_opcode::BATCH:         return process_batch(stream, std::move(in), client_state, std::move(permit), trace_state);
-        case cql_binary_opcode::REGISTER:      return wrap_in_foreign(process_register(stream, std::move(in), client_state, trace_state));
-        default:                               throw exceptions::protocol_exception(format("Unknown opcode {:d}", int(cqlop)));
-        }
-    }).then_wrapped([this, cqlop, stream, &client_state, linearization_buffer = std::move(linearization_buffer), trace_state] (future<foreign_ptr<std::unique_ptr<cql_server::response>>> f) -> foreign_ptr<std::unique_ptr<cql_server::response>> {
-        auto stop_trace = defer([&] {
-            tracing::stop_foreground(trace_state);
-        });
-        --_server._stats.requests_serving;
-        try {
-            foreign_ptr<std::unique_ptr<cql_server::response>> response = f.get0();
-
-            auto res_op = response->opcode();
-
-            // and modify state now that we've generated a response.
+        return futurize_invoke([this, cqlop, stream, &fbuf, &client_state, linearization_buffer_ptr, permit = std::move(permit), trace_state] () mutable {
+            // When using authentication, we need to ensure we are doing proper state transitions,
+            // i.e. we cannot simply accept any query/exec ops unless auth is complete
             switch (client_state.get_auth_state()) {
-            case auth_state::UNINITIALIZED:
-                if (cqlop == cql_binary_opcode::STARTUP) {
-                    if (res_op == cql_binary_opcode::AUTHENTICATE) {
-                        client_state.set_auth_state(auth_state::AUTHENTICATION);
-                    } else if (res_op == cql_binary_opcode::READY) {
-                        client_state.set_auth_state(auth_state::READY);
+                case auth_state::UNINITIALIZED:
+                    if (cqlop != cql_binary_opcode::STARTUP && cqlop != cql_binary_opcode::OPTIONS) {
+                        throw exceptions::protocol_exception(format("Unexpected message {:d}, expecting STARTUP or OPTIONS", int(cqlop)));
                     }
-                }
-                break;
-            case auth_state::AUTHENTICATION:
-                // Support both SASL auth from protocol v2 and the older style Credentials auth from v1
-                assert(cqlop == cql_binary_opcode::AUTH_RESPONSE || cqlop == cql_binary_opcode::CREDENTIALS);
-                if (res_op == cql_binary_opcode::READY || res_op == cql_binary_opcode::AUTH_SUCCESS) {
-                    client_state.set_auth_state(auth_state::READY);
-                }
-                break;
-            default:
-            case auth_state::READY:
-                break;
+                    break;
+                case auth_state::AUTHENTICATION:
+                    // Support both SASL auth from protocol v2 and the older style Credentials auth from v1
+                    if (cqlop != cql_binary_opcode::AUTH_RESPONSE && cqlop != cql_binary_opcode::CREDENTIALS) {
+                        throw exceptions::protocol_exception(format("Unexpected message {:d}, expecting {}", int(cqlop), _version == 1 ? "CREDENTIALS" : "SASL_RESPONSE"));
+                    }
+                    break;
+                case auth_state::READY: default:
+                    if (cqlop == cql_binary_opcode::STARTUP) {
+                        throw exceptions::protocol_exception("Unexpected message STARTUP, the connection is already initialized");
+                    }
+                    break;
             }
 
-            tracing::set_response_size(trace_state, response->size());
-            return response;
-        } catch (const exceptions::unavailable_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_unavailable_error(stream, ex.code(), ex.what(), ex.consistency, ex.required, ex.alive, trace_state);
-        } catch (const exceptions::read_timeout_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_read_timeout_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.block_for, ex.data_present, trace_state);
-        } catch (const exceptions::read_failure_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_read_failure_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.failures, ex.block_for, ex.data_present, trace_state);
-        } catch (const exceptions::mutation_write_timeout_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_mutation_write_timeout_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.block_for, ex.type, trace_state);
-        } catch (const exceptions::mutation_write_failure_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_mutation_write_failure_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.failures, ex.block_for, ex.type, trace_state);
-        } catch (const exceptions::already_exists_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_already_exists_error(stream, ex.code(), ex.what(), ex.ks_name, ex.cf_name, trace_state);
-        } catch (const exceptions::prepared_query_not_found_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_unprepared_error(stream, ex.code(), ex.what(), ex.id, trace_state);
-        } catch (const exceptions::function_execution_exception& ex) {
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_function_failure_error(stream, ex.code(), ex.what(), ex.ks_name, ex.func_name, ex.args, trace_state);
-        } catch (const exceptions::cassandra_exception& ex) {
-            // Note: the CQL protocol specifies that many types of errors have
-            // mandatory parameters. These cassandra_exception subclasses MUST
-            // be handled above. This default "cassandra_exception" case is
-            // only appropriate for the specific types of errors which do not have
-            // additional information, such as invalid_request_exception.
-            // TODO: consider listing those types explicitly, instead of the
-            // catch-all type cassandra_exception.
-            try { ++_server._stats.errors[ex.code()]; } catch(...) {}
-            return make_error(stream, ex.code(), ex.what(), trace_state);
-        } catch (std::exception& ex) {
-            try { ++_server._stats.errors[exceptions::exception_code::SERVER_ERROR]; } catch(...) {}
-            sstring msg = ex.what();
-            try {
-                std::rethrow_if_nested(ex);
-            } catch (...) {
-                std::ostringstream ss;
-                ss << msg << ": " << std::current_exception();
-                msg = ss.str();
+            tracing::set_username(trace_state, client_state.user());
+
+            auto wrap_in_foreign = [] (future<std::unique_ptr<cql_server::response>> f) {
+                return f.then([] (std::unique_ptr<cql_server::response> p) {
+                    return make_ready_future<foreign_ptr<std::unique_ptr<cql_server::response>>>(make_foreign(std::move(p)));
+                });
+            };
+            auto in = request_reader(std::move(fbuf), *linearization_buffer_ptr);
+            switch (cqlop) {
+                case cql_binary_opcode::STARTUP:       return wrap_in_foreign(process_startup(stream, std::move(in), client_state, trace_state));
+                case cql_binary_opcode::AUTH_RESPONSE: return wrap_in_foreign(process_auth_response(stream, std::move(in), client_state, trace_state));
+                case cql_binary_opcode::OPTIONS:       return wrap_in_foreign(process_options(stream, std::move(in), client_state, trace_state));
+                case cql_binary_opcode::QUERY:         return process_query(stream, std::move(in), client_state, std::move(permit), trace_state);
+                case cql_binary_opcode::PREPARE:       return wrap_in_foreign(process_prepare(stream, std::move(in), client_state, trace_state));
+                case cql_binary_opcode::EXECUTE:       return process_execute(stream, std::move(in), client_state, std::move(permit), trace_state);
+                case cql_binary_opcode::BATCH:         return process_batch(stream, std::move(in), client_state, std::move(permit), trace_state);
+                case cql_binary_opcode::REGISTER:      return wrap_in_foreign(process_register(stream, std::move(in), client_state, trace_state));
+                default:                               throw exceptions::protocol_exception(format("Unknown opcode {:d}", int(cqlop)));
             }
-            return make_error(stream, exceptions::exception_code::SERVER_ERROR, msg, trace_state);
-        } catch (...) {
-            try { ++_server._stats.errors[exceptions::exception_code::SERVER_ERROR]; } catch(...) {}
-            return make_error(stream, exceptions::exception_code::SERVER_ERROR, "unknown error", trace_state);
-        }
+        }).then_wrapped([this, cqlop, stream, &client_state, linearization_buffer = std::move(linearization_buffer), trace_state] (future<foreign_ptr<std::unique_ptr<cql_server::response>>> f) -> foreign_ptr<std::unique_ptr<cql_server::response>> {
+            auto stop_trace = defer([&] {
+                tracing::stop_foreground(trace_state);
+            });
+            --_server._stats.requests_serving;
+            try {
+                foreign_ptr<std::unique_ptr<cql_server::response>> response = f.get0();
+
+                auto res_op = response->opcode();
+
+                // and modify state now that we've generated a response.
+                switch (client_state.get_auth_state()) {
+                    case auth_state::UNINITIALIZED:
+                        if (cqlop == cql_binary_opcode::STARTUP) {
+                            if (res_op == cql_binary_opcode::AUTHENTICATE) {
+                                client_state.set_auth_state(auth_state::AUTHENTICATION);
+                            } else if (res_op == cql_binary_opcode::READY) {
+                                client_state.set_auth_state(auth_state::READY);
+                            }
+                        }
+                        break;
+                    case auth_state::AUTHENTICATION:
+                        // Support both SASL auth from protocol v2 and the older style Credentials auth from v1
+                        assert(cqlop == cql_binary_opcode::AUTH_RESPONSE || cqlop == cql_binary_opcode::CREDENTIALS);
+                        if (res_op == cql_binary_opcode::READY || res_op == cql_binary_opcode::AUTH_SUCCESS) {
+                            client_state.set_auth_state(auth_state::READY);
+                        }
+                        break;
+                    default:
+                    case auth_state::READY:
+                        break;
+                }
+
+                tracing::set_response_size(trace_state, response->size());
+                return response;
+            } catch (const exceptions::unavailable_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_unavailable_error(stream, ex.code(), ex.what(), ex.consistency, ex.required, ex.alive, trace_state);
+            } catch (const exceptions::read_timeout_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_read_timeout_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.block_for, ex.data_present, trace_state);
+            } catch (const exceptions::read_failure_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_read_failure_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.failures, ex.block_for, ex.data_present, trace_state);
+            } catch (const exceptions::mutation_write_timeout_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_mutation_write_timeout_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.block_for, ex.type, trace_state);
+            } catch (const exceptions::mutation_write_failure_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_mutation_write_failure_error(stream, ex.code(), ex.what(), ex.consistency, ex.received, ex.failures, ex.block_for, ex.type, trace_state);
+            } catch (const exceptions::already_exists_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_already_exists_error(stream, ex.code(), ex.what(), ex.ks_name, ex.cf_name, trace_state);
+            } catch (const exceptions::prepared_query_not_found_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_unprepared_error(stream, ex.code(), ex.what(), ex.id, trace_state);
+            } catch (const exceptions::function_execution_exception& ex) {
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_function_failure_error(stream, ex.code(), ex.what(), ex.ks_name, ex.func_name, ex.args, trace_state);
+            } catch (const exceptions::cassandra_exception& ex) {
+                // Note: the CQL protocol specifies that many types of errors have
+                // mandatory parameters. These cassandra_exception subclasses MUST
+                // be handled above. This default "cassandra_exception" case is
+                // only appropriate for the specific types of errors which do not have
+                // additional information, such as invalid_request_exception.
+                // TODO: consider listing those types explicitly, instead of the
+                // catch-all type cassandra_exception.
+                try { ++_server._stats.errors[ex.code()]; } catch(...) {}
+                return make_error(stream, ex.code(), ex.what(), trace_state);
+            } catch (std::exception& ex) {
+                try { ++_server._stats.errors[exceptions::exception_code::SERVER_ERROR]; } catch(...) {}
+                sstring msg = ex.what();
+                try {
+                    std::rethrow_if_nested(ex);
+                } catch (...) {
+                    std::ostringstream ss;
+                    ss << msg << ": " << std::current_exception();
+                    msg = ss.str();
+                }
+                return make_error(stream, exceptions::exception_code::SERVER_ERROR, msg, trace_state);
+            } catch (...) {
+                try { ++_server._stats.errors[exceptions::exception_code::SERVER_ERROR]; } catch(...) {}
+                return make_error(stream, exceptions::exception_code::SERVER_ERROR, "unknown error", trace_state);
+            }
+        });
+    }).finally([trace_state] () {
+        return seastar::do_with(trace_state, tracing::stop);
     });
 }
 
@@ -935,12 +940,14 @@ process_query_internal(service::client_state& client_state, distributed<cql3::qu
         tracing::begin(trace_state, "Execute CQL3 query", client_state.get_client_address());
     }
 
-    return qp.local().execute_direct(query, query_state, options).then([q_state = std::move(q_state), stream, skip_metadata, version] (auto msg) {
+    return qp.local().execute_direct(query, query_state, options).then([q_state = std::move(q_state), trace_state, stream, skip_metadata, version] (auto msg) mutable {
         if (msg->move_to_shard()) {
-            return process_fn_return_type(dynamic_pointer_cast<messages::result_message::bounce_to_shard>(msg));
+            return make_ready_future<process_fn_return_type>(process_fn_return_type(dynamic_pointer_cast<messages::result_message::bounce_to_shard>(msg)));
         } else {
-            tracing::trace(q_state->query_state.get_trace_state(), "Done processing - preparing a result");
-            return process_fn_return_type(make_foreign(make_result(stream, *msg, q_state->query_state.get_trace_state(), version, skip_metadata)));
+            tracing::trace(trace_state, "Done processing - preparing a result");
+            return tracing::collect_data(trace_state).then([stream, skip_metadata, version, trace_state, msg = std::move(msg)] () {
+                return process_fn_return_type(make_foreign(make_result(stream, *msg, trace_state, version, skip_metadata)));
+            });
         }
     });
 }
@@ -972,11 +979,13 @@ future<std::unique_ptr<cql_server::response>> cql_server::connection::process_pr
         }
     }).then([this, query, stream, &client_state, trace_state] () mutable {
         tracing::trace(trace_state, "Done preparing on remote shards");
-        return _server._query_processor.local().prepare(std::move(query), client_state, false).then([this, stream, &client_state, trace_state] (auto msg) {
+        return _server._query_processor.local().prepare(std::move(query), client_state, false).then([this, stream, &client_state, trace_state] (auto msg) mutable {
             tracing::trace(trace_state, "Done preparing on a local shard - preparing a result. ID is [{}]", seastar::value_of([&msg] {
                 return messages::result_message::prepared::cql::get_id(msg);
             }));
-            return make_result(stream, *msg, trace_state, _version);
+            return tracing::collect_data(trace_state).then([this, msg = std::move(msg), trace_state, stream] () {
+                return make_result(stream, *msg, trace_state, _version);
+            });
         });
     });
 }
@@ -1047,12 +1056,15 @@ process_execute_internal(service::client_state& client_state, distributed<cql3::
 
     tracing::trace(trace_state, "Processing a statement");
     return qp.local().execute_prepared(std::move(prepared), std::move(cache_key), query_state, options, needs_authorization)
-            .then([trace_state = query_state.get_trace_state(), skip_metadata, q_state = std::move(q_state), stream, version] (auto msg) {
+            .then([trace_state = query_state.get_trace_state(), skip_metadata, q_state = std::move(q_state), stream, version] (auto msg) mutable {
         if (msg->move_to_shard()) {
-            return process_fn_return_type(dynamic_pointer_cast<messages::result_message::bounce_to_shard>(msg));
+            return make_ready_future<process_fn_return_type>(process_fn_return_type(dynamic_pointer_cast<messages::result_message::bounce_to_shard>(msg)));
         } else {
             tracing::trace(q_state->query_state.get_trace_state(), "Done processing - preparing a result");
-            return process_fn_return_type(make_foreign(make_result(stream, *msg, q_state->query_state.get_trace_state(), version, skip_metadata)));
+            return tracing::collect_data(trace_state).then([skip_metadata, q_state = std::move(q_state), stream, version, msg = std::move(msg)] {
+                return process_fn_return_type(make_foreign(
+                        make_result(stream, *msg, q_state->query_state.get_trace_state(), version, skip_metadata)));
+            });
         }
     });
 }
@@ -1170,14 +1182,16 @@ process_batch_internal(service::client_state& client_state, distributed<cql3::qu
 
     auto batch = ::make_shared<cql3::statements::batch_statement>(cql3::statements::batch_statement::type(type), std::move(modifications), cql3::attributes::none(), qp.local().get_cql_stats());
     return qp.local().execute_batch(batch, query_state, options, std::move(pending_authorization_entries))
-            .then([stream, batch, q_state = std::move(q_state), trace_state = query_state.get_trace_state(), version] (auto msg) {
-        if (msg->move_to_shard()) {
-            return process_fn_return_type(dynamic_pointer_cast<messages::result_message::bounce_to_shard>(msg));
-        } else {
-            tracing::trace(q_state->query_state.get_trace_state(), "Done processing - preparing a result");
-            return process_fn_return_type(make_foreign(make_result(stream, *msg, trace_state, version)));
-        }
-    });
+        .then([stream, batch, q_state = std::move(q_state), trace_state = query_state.get_trace_state(), version] (auto msg) mutable {
+            if (msg->move_to_shard()) {
+                return make_ready_future<process_fn_return_type>(process_fn_return_type(dynamic_pointer_cast<messages::result_message::bounce_to_shard>(msg)));
+            } else {
+                tracing::trace(q_state->query_state.get_trace_state(), "Done processing - preparing a result");
+                return tracing::collect_data(trace_state).then([stream, batch, trace_state, version, msg = std::move(msg)] {
+                    return process_fn_return_type(make_foreign(make_result(stream, *msg, trace_state, version)));
+                });
+            }
+        });
 }
 
 future<foreign_ptr<std::unique_ptr<cql_server::response>>>

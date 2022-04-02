@@ -141,19 +141,19 @@ trace_state_ptr tracing::create_session(const trace_info& secondary_session_info
     try {
         bool opentelemetry_tracing = secondary_session_info.state_props.contains(trace_state_props::opentelemetry);
         if (!started()) {
-            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing) : nullptr;
+            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, secondary_session_info.otel_data) : nullptr;
         }
 
         // Don't create a session if its records are likely to be dropped
         if (!may_create_new_session(secondary_session_info.session_id)) {
-            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing) : nullptr;
+            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, secondary_session_info.otel_data) : nullptr;
         }
 
         ++_active_sessions;
         if (secondary_session_info.state_props.contains(trace_state_props::classic)) {
-            return make_lw_shared<opentelemetry_state>(make_lw_shared<trace_state>(secondary_session_info), opentelemetry_tracing);
+            return make_lw_shared<opentelemetry_state>(make_lw_shared<trace_state>(secondary_session_info), secondary_session_info.otel_data);
         }
-        return make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing);
+        return make_lw_shared<opentelemetry_state>(nullptr, secondary_session_info.otel_data);
     } catch (...) {
         // return an uninitialized state in case of any error (OOM?)
         return nullptr;

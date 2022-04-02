@@ -339,7 +339,7 @@ sstring trace_state::raw_value_to_sstring(const cql3::raw_value_view& v, const d
     }
 }
 
-void opentelemetry_state::serialize_replicas(bytes& serialized) const {
+void opentelemetry_state_data::serialize_replicas(bytes& serialized) const {
     const auto size = htonl(_replicas.size());
     const auto *size_ptr = reinterpret_cast<const int8_t*>(&size);
     serialized += bytes{size_ptr, sizeof(size)};
@@ -356,7 +356,7 @@ void opentelemetry_state::serialize_replicas(bytes& serialized) const {
     }
 }
 
-void opentelemetry_state::serialize_cache_counter(bytes& serialized) const {
+void opentelemetry_state_data::serialize_cache_counter(bytes& serialized) const {
     const auto counter = htonl(_cache_counter);
     const auto *counter_ptr = reinterpret_cast<const int8_t*>(&counter);
     serialized += bytes{counter_ptr, sizeof(counter)};
