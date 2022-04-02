@@ -507,13 +507,10 @@ private:
 };
 
 
-class opentelemetry_state final {
+class opentelemetry_state_data final {
 public:
     using cache_counter_t = int32_t;
 
-private:
-    lw_shared_ptr<trace_state> _state_ptr;
-    bool const _opentelemetry_tracing{false};
     inet_address_vector_replica_set _replicas;
     sstring _statement_type;
     // Number of read partitions that were found in cache.
@@ -522,15 +519,72 @@ private:
     void serialize_replicas(bytes& serialized) const;
     void serialize_statement_type(bytes& serialized) const;
     void serialize_cache_counter(bytes& serialized) const;
+};
+
+
+class opentelemetry_state final {
+
+private:
+    lw_shared_ptr<trace_state> _state_ptr;
+    std::shared_ptr<sharded<opentelemetry_state_data>> _data;
+
+    class reducer {
+    private:
+        opentelemetry_state_data _data;
+
+    public:
+        void operator()(const opentelemetry_state_data& to_reduce) {
+            _data._replicas.insert(_data._replicas.end(),
+                                   to_reduce._replicas.begin(),
+                                   to_reduce._replicas.end());
+            _data._cache_counter += to_reduce._cache_counter;
+            _data._statement_type += to_reduce._statement_type;
+        }
+
+        opentelemetry_state_data get() const {
+            return _data;
+        }
+    };
 
 public:
     opentelemetry_state() = default;
-    opentelemetry_state(lw_shared_ptr<trace_state> state_ptr, bool opentelemetry_tracing = false)
-            : _state_ptr(std::move(state_ptr)), _opentelemetry_tracing(opentelemetry_tracing)
+    opentelemetry_state(lw_shared_ptr<trace_state> state_ptr, std::shared_ptr<sharded<opentelemetry_state_data>> data)
+            : _state_ptr(std::move(state_ptr)), _data(std::move(data))
     {}
-    opentelemetry_state(std::nullptr_t, bool opentelemetry_tracing = false)
-            : _state_ptr(nullptr), _opentelemetry_tracing(opentelemetry_tracing)
+    opentelemetry_state(std::nullptr_t , std::shared_ptr<sharded<opentelemetry_state_data>> data)
+            : _state_ptr(nullptr), _data(std::move(data))
     {}
+    template<typename TraceState>
+    opentelemetry_state(TraceState state_ptr, bool opentelemetry_tracing = false)
+            : opentelemetry_state(std::move(state_ptr),
+                                  opentelemetry_tracing
+                                      ? std::make_shared<sharded<opentelemetry_state_data>>()
+                                      : nullptr)
+    {}
+
+    /**
+     * Helper function to initialize sharded data in opentelemetry_state.
+     */
+    future<> start() {
+        return _data->start();
+    }
+
+    /**
+     * Helper function to properly stop sharded data in opentelemetry_state.
+     */
+    future<> stop() {
+        return _data->stop();
+    }
+
+    /**
+     * Helper function to collect opentelemetry data from all shards.
+     * It should be called before serializing opentelemetry_state.
+     */
+    future<> collect_data() {
+        return _data->map_reduce(reducer{}, std::identity{}).then([&local_data = _data->local()] (auto data) {
+            local_data = data;
+        });
+    }
 
     /**
      * @return serialized opentelemetry state.
@@ -538,9 +592,9 @@ public:
     bytes serialize() const noexcept {
         bytes serialized{};
 
-        serialize_replicas(serialized);
-        serialize_cache_counter(serialized);
-        serialize_statement_type(serialized);
+        _data->local().serialize_replicas(serialized);
+        _data->local().serialize_cache_counter(serialized);
+        _data->local().serialize_statement_type(serialized);
 
         return serialized;
     }
@@ -551,7 +605,7 @@ public:
      * @param replicas list of contacted replicas
      */
     void set_replicas(const inet_address_vector_replica_set& replicas) {
-        _replicas = replicas;
+        _data->local()._replicas = replicas;
     }
 
     /**
@@ -560,7 +614,7 @@ public:
      * @param statement_type type of prepared statement.
      */
     void set_statement_type(const sstring& statement_type) {
-        _statement_type = statement_type;
+        _data->local()._statement_type = statement_type;
     }
 
     /**
@@ -568,22 +622,24 @@ public:
      *
      * @param count number of partitions
      */
-    void modify_cache_counter(cache_counter_t count) {
-        _cache_counter += count;
+    void modify_cache_counter(opentelemetry_state_data::cache_counter_t count) {
+        if (_data->local_is_initialized()) {
+            _data->local()._cache_counter += count;
+        }
     }
 
     /**
      * @return number of partitions that were found in cache
      */
-    cache_counter_t get_cache_counter() const {
-        return _cache_counter;
+    opentelemetry_state_data::cache_counter_t get_cache_counter() const {
+        return _data->local()._cache_counter;
     }
 
     /**
      * @return True if OpenTelemetry trace state is stored.
      */
     bool has_opentelemetry() const noexcept {
-        return _opentelemetry_tracing;
+        return __builtin_expect(bool(_data), false);
     };
 
     /**
@@ -605,6 +661,13 @@ public:
      */
     trace_state& get_tracing() const noexcept {
         return *_state_ptr;
+    }
+
+    /**
+     * @return A pointer to sharded data.
+     */
+    std::shared_ptr<sharded<opentelemetry_state_data>> get_data() const {
+        return _data;
     }
 };
 
@@ -632,7 +695,7 @@ public:
         : _state_ptr(nullptr)
     {}
 
-    using cache_counter_t = opentelemetry_state::cache_counter_t;
+    using cache_counter_t = opentelemetry_state_data::cache_counter_t;
 
     /**
      * @return True if classic trace state is stored.
@@ -884,7 +947,7 @@ inline std::optional<trace_info> make_trace_info(const trace_state_ptr& state) {
     if (state.has_opentelemetry()) {
         trace_state_props_set props{};
         props.set(trace_state_props::opentelemetry);
-        return trace_info{props};
+        return trace_info{props, state.get_opentelemetry().get_data()};
     }
 
     return std::nullopt;
@@ -926,6 +989,30 @@ inline trace_state_ptr::cache_counter_t get_cache_counter(const trace_state_ptr&
     }
 
     return 0;
+}
+
+inline future<> start(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->start();
+    }
+
+    return make_ready_future<>();
+}
+
+inline future<> stop(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->stop();
+    }
+
+    return make_ready_future<>();
+}
+
+inline future<> collect_data(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->collect_data();
+    }
+
+    return make_ready_future<>();
 }
 
 // global_trace_state_ptr is a helper class that may be used for creating spans

@@ -3559,8 +3559,8 @@ protected:
             return _proxy->query_result_local(_schema, _cmd, _partition_range, opts, _trace_state, timeout);
         } else {
             tracing::trace(_trace_state, "read_data: sending a message to /{}", ep);
-            return _proxy->_messaging.send_read_data(netw::messaging_service::msg_addr{ep, 0}, timeout, *_cmd, _partition_range, opts.digest_algo).then([this, ep](rpc::tuple<query::result, rpc::optional<cache_temperature>, tracing::trace_state_ptr::cache_counter_t> result_hit_rate) {
-                auto&& [result, hit_rate, cache_counter] = result_hit_rate;
+            return _proxy->_messaging.send_read_data(netw::messaging_service::msg_addr{ep, 0}, timeout, *_cmd, _partition_range, opts.digest_algo).then([this, ep](rpc::tuple<query::result, rpc::optional<cache_temperature>, tracing::trace_state_ptr::cache_counter_t> response) {
+                auto&& [result, hit_rate, cache_counter] = response;
                 tracing::trace(_trace_state, "read_data: got response from /{}", ep);
                 tracing::modify_cache_counter(_trace_state, cache_counter);
                 return make_ready_future<rpc::tuple<foreign_ptr<lw_shared_ptr<query::result>>, cache_temperature, tracing::trace_state_ptr::cache_counter_t>>(rpc::tuple(make_foreign(::make_lw_shared<query::result>(std::move(result))), hit_rate.value_or(cache_temperature::invalid()), cache_counter));
@@ -5109,22 +5109,25 @@ void storage_proxy::init_messaging_service(shared_ptr<migration_manager> mm) {
             auto& cfg = sp->local_db().get_config();
             cmd.max_result_size.emplace(cfg.max_memory_for_unlimited_query_soft_limit(), cfg.max_memory_for_unlimited_query_hard_limit());
         }
-        return do_with(std::move(pr), std::move(sp), std::move(trace_state_ptr), [&cinfo, cmd = make_lw_shared<query::read_command>(std::move(cmd)), src_addr = std::move(src_addr), da, t, mm] (::compat::wrapping_partition_range& pr, shared_ptr<storage_proxy>& p, tracing::trace_state_ptr& trace_state_ptr) mutable {
-            p->get_stats().replica_data_reads++;
-            auto src_ip = src_addr.addr;
-            return mm->get_schema_for_read(cmd->schema_version, std::move(src_addr), p->_messaging).then([cmd, da, &pr, &p, &trace_state_ptr, t] (schema_ptr s) {
-                auto pr2 = ::compat::unwrap(std::move(pr), *s);
-                if (pr2.second) {
-                    // this function assumes singular queries but doesn't validate
-                    throw std::runtime_error("READ_DATA called with wrapping range");
-                }
-                query::result_options opts;
-                opts.digest_algo = da;
-                opts.request = da == query::digest_algorithm::none ? query::result_request::only_result : query::result_request::result_and_digest;
-                auto timeout = t ? *t : db::no_timeout;
-                return p->query_result_local(std::move(s), cmd, std::move(pr2.first), opts, trace_state_ptr, timeout);
-            }).finally([&trace_state_ptr, src_ip] () mutable {
-                tracing::trace(trace_state_ptr, "read_data handling is done, sending a response to /{}", src_ip);
+        return tracing::start(trace_state_ptr).then([pr = std::move(pr), sp = std::move(sp), trace_state_ptr, &cinfo, cmd = make_lw_shared<query::read_command>(std::move(cmd)), src_addr = std::move(src_addr), da, t, mm] () {
+            return do_with(std::move(pr), std::move(sp), std::move(trace_state_ptr), [&cinfo, cmd = std::move(cmd), src_addr = std::move(src_addr), da, t, mm] (::compat::wrapping_partition_range& pr, shared_ptr<storage_proxy>& p, tracing::trace_state_ptr& trace_state_ptr) mutable {
+                p->get_stats().replica_data_reads++;
+                auto src_ip = src_addr.addr;
+                return mm->get_schema_for_read(cmd->schema_version, std::move(src_addr), p->_messaging).then([cmd, da, &pr, &p, &trace_state_ptr, t] (schema_ptr s) {
+                    auto pr2 = ::compat::unwrap(std::move(pr), *s);
+                    if (pr2.second) {
+                        // this function assumes singular queries but doesn't validate
+                        throw std::runtime_error("READ_DATA called with wrapping range");
+                    }
+                    query::result_options opts;
+                    opts.digest_algo = da;
+                    opts.request = da == query::digest_algorithm::none ? query::result_request::only_result : query::result_request::result_and_digest;
+                    auto timeout = t ? *t : db::no_timeout;
+                    return p->query_result_local(std::move(s), cmd, std::move(pr2.first), opts, trace_state_ptr, timeout);
+                }).finally([&trace_state_ptr, src_ip] () mutable {
+                    tracing::trace(trace_state_ptr, "read_data handling is done, sending a response to /{}", src_ip);
+                    return tracing::stop(trace_state_ptr);
+                });
             });
         });
     });
