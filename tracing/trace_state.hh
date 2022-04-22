@@ -510,15 +510,23 @@ private:
 class opentelemetry_state_data final {
 public:
     using cache_counter_t = int32_t;
+    using dma_counter_t = int32_t;
+    using dma_size_t = int32_t;
 
     inet_address_vector_replica_set _replicas;
     sstring _statement_type;
     // Number of read partitions that were found in cache.
     cache_counter_t _cache_counter{0};
+    // Number of DMA reads that were executed.
+    dma_counter_t _dma_counter{0};
+    // Number of bytes read in DMA reads.
+    dma_size_t _dma_size{0};
 
     void serialize_replicas(bytes& serialized) const;
     void serialize_statement_type(bytes& serialized) const;
     void serialize_cache_counter(bytes& serialized) const;
+    void serialize_dma_counter(bytes& serialized) const;
+    void serialize_dma_size(bytes& serialized) const;
 };
 
 
@@ -538,6 +546,8 @@ private:
                                    to_reduce._replicas.begin(),
                                    to_reduce._replicas.end());
             _data._cache_counter += to_reduce._cache_counter;
+            _data._dma_counter += to_reduce._dma_counter;
+            _data._dma_size += to_reduce._dma_size;
             _data._statement_type += to_reduce._statement_type;
         }
 
@@ -594,6 +604,8 @@ public:
 
         _data->local().serialize_replicas(serialized);
         _data->local().serialize_cache_counter(serialized);
+        _data->local().serialize_dma_counter(serialized);
+        _data->local().serialize_dma_size(serialized);
         _data->local().serialize_statement_type(serialized);
 
         return serialized;
@@ -629,10 +641,46 @@ public:
     }
 
     /**
+     * Increment counter of DMA reads.
+     *
+     * @param count number of reads
+     */
+    void modify_dma_counter(opentelemetry_state_data::dma_counter_t count) {
+        if (_data->local_is_initialized()) {
+            _data->local()._dma_counter += count;
+        }
+    }
+
+    /**
+     * Increment number of bytes read in DMA reads.
+     *
+     * @param size number of bytes.
+     */
+    void modify_dma_size(opentelemetry_state_data::dma_size_t size) {
+        if (_data->local_is_initialized()) {
+            _data->local()._dma_size += size;
+        }
+    }
+
+    /**
      * @return number of partitions that were found in cache
      */
     opentelemetry_state_data::cache_counter_t get_cache_counter() const {
         return _data->local()._cache_counter;
+    }
+
+    /**
+     * @return number of DMA reads that were executed
+    */
+    opentelemetry_state_data::dma_counter_t get_dma_counter() const {
+        return _data->local()._dma_counter;
+    }
+
+    /**
+     * @return number of bytes read in DMA reads
+    */
+    opentelemetry_state_data::dma_size_t get_dma_size() const {
+        return _data->local()._dma_size;
     }
 
     /**
@@ -696,6 +744,8 @@ public:
     {}
 
     using cache_counter_t = opentelemetry_state_data::cache_counter_t;
+    using dma_counter_t = opentelemetry_state_data::dma_counter_t;
+    using dma_size_t = opentelemetry_state_data::dma_size_t;
 
     /**
      * @return True if classic trace state is stored.
@@ -983,9 +1033,37 @@ inline void modify_cache_counter(const trace_state_ptr& p, trace_state_ptr::cach
     }
 }
 
+inline void modify_dma_counter(const trace_state_ptr& p, trace_state_ptr::dma_counter_t count) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->modify_dma_counter(count);
+    }
+}
+
+inline void modify_dma_size(const trace_state_ptr& p, trace_state_ptr::dma_size_t size) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->modify_dma_size(size);
+    }
+}
+
 inline trace_state_ptr::cache_counter_t get_cache_counter(const trace_state_ptr& p) {
     if (p.has_opentelemetry()) {
         return p.get_opentelemetry_ptr()->get_cache_counter();
+    }
+
+    return 0;
+}
+
+inline trace_state_ptr::dma_counter_t get_dma_counter(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->get_dma_counter();
+    }
+
+    return 0;
+}
+
+inline trace_state_ptr::dma_size_t get_dma_size(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->get_dma_size();
     }
 
     return 0;
