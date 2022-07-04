@@ -129,7 +129,7 @@ std::ostream& operator<<(std::ostream& os, const span_id& id);
 //
 // Otherwise this may break IDL's backward compatibility.
 enum class trace_state_props {
-    write_on_close, primary, log_slow_query, full_tracing, ignore_events
+    write_on_close, primary, log_slow_query, full_tracing, ignore_events, opentelemetry, classic
 };
 
 using trace_state_props_set = enum_set<super_enum<trace_state_props,
@@ -137,7 +137,11 @@ using trace_state_props_set = enum_set<super_enum<trace_state_props,
     trace_state_props::primary,
     trace_state_props::log_slow_query,
     trace_state_props::full_tracing,
-    trace_state_props::ignore_events>>;
+    trace_state_props::ignore_events,
+    trace_state_props::opentelemetry,
+    trace_state_props::classic>>;
+
+class opentelemetry_state_data;
 
 class trace_info {
 public:
@@ -148,6 +152,7 @@ public:
     uint32_t slow_query_threshold_us; // in microseconds
     uint32_t slow_query_ttl_sec; // in seconds
     span_id parent_id;
+    std::shared_ptr<seastar::sharded<opentelemetry_state_data>> otel_data;
 
 public:
     trace_info(utils::UUID sid, trace_type t, bool w_o_c, trace_state_props_set s_p, uint32_t slow_query_threshold, uint32_t slow_query_ttl, span_id p_id)
@@ -161,6 +166,10 @@ public:
     {
         state_props.set_if<trace_state_props::write_on_close>(write_on_close);
     }
+
+    trace_info(trace_state_props_set s_p, std::shared_ptr<seastar::sharded<opentelemetry_state_data>> otel_data)
+        : state_props(s_p), otel_data(otel_data)
+    {}
 };
 
 struct one_session_records;

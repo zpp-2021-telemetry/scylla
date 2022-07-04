@@ -316,7 +316,7 @@ inline file make_tracked_index_file(sstable& sst, reader_permit permit, tracing:
                                     use_caching caching) {
     auto f = caching ? sst.index_file() : sst.uncached_index_file();
     f = make_tracked_file(std::move(f), std::move(permit));
-    if (!trace_state.has_tracing()) {
+    if (!trace_state.has_tracing() && !trace_state.has_opentelemetry()) {
         return f;
     }
     return tracing::make_traced_file(std::move(f), std::move(trace_state), format("{}:", sst.filename(component_type::Index)));

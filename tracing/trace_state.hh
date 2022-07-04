@@ -507,24 +507,94 @@ private:
 };
 
 
-class opentelemetry_state final {
-private:
-    lw_shared_ptr<trace_state> _state_ptr;
-    bool const _opentelemetry_tracing{false};
+class opentelemetry_state_data final {
+public:
+    using cache_counter_t = int32_t;
+    using dma_counter_t = int32_t;
+    using dma_size_t = int32_t;
+
     inet_address_vector_replica_set _replicas;
     sstring _statement_type;
+    // Number of read partitions that were found in cache.
+    cache_counter_t _cache_counter{0};
+    // Number of DMA reads that were executed.
+    dma_counter_t _dma_counter{0};
+    // Number of bytes read in DMA reads.
+    dma_size_t _dma_size{0};
 
     void serialize_replicas(bytes& serialized) const;
     void serialize_statement_type(bytes& serialized) const;
+    void serialize_cache_counter(bytes& serialized) const;
+    void serialize_dma_counter(bytes& serialized) const;
+    void serialize_dma_size(bytes& serialized) const;
+};
+
+
+class opentelemetry_state final {
+
+private:
+    lw_shared_ptr<trace_state> _state_ptr;
+    std::shared_ptr<sharded<opentelemetry_state_data>> _data;
+
+    class reducer {
+    private:
+        opentelemetry_state_data _data;
+
+    public:
+        void operator()(const opentelemetry_state_data& to_reduce) {
+            _data._replicas.insert(_data._replicas.end(),
+                                   to_reduce._replicas.begin(),
+                                   to_reduce._replicas.end());
+            _data._cache_counter += to_reduce._cache_counter;
+            _data._dma_counter += to_reduce._dma_counter;
+            _data._dma_size += to_reduce._dma_size;
+            _data._statement_type += to_reduce._statement_type;
+        }
+
+        opentelemetry_state_data get() const {
+            return _data;
+        }
+    };
 
 public:
     opentelemetry_state() = default;
-    opentelemetry_state(lw_shared_ptr<trace_state> state_ptr, bool opentelemetry_tracing = false)
-            : _state_ptr(std::move(state_ptr)), _opentelemetry_tracing(opentelemetry_tracing)
+    opentelemetry_state(lw_shared_ptr<trace_state> state_ptr, std::shared_ptr<sharded<opentelemetry_state_data>> data)
+            : _state_ptr(std::move(state_ptr)), _data(std::move(data))
     {}
-    opentelemetry_state(std::nullptr_t, bool opentelemetry_tracing = false)
-            : _state_ptr(nullptr), _opentelemetry_tracing(opentelemetry_tracing)
+    opentelemetry_state(std::nullptr_t , std::shared_ptr<sharded<opentelemetry_state_data>> data)
+            : _state_ptr(nullptr), _data(std::move(data))
     {}
+    template<typename TraceState>
+    opentelemetry_state(TraceState state_ptr, bool opentelemetry_tracing = false)
+            : opentelemetry_state(std::move(state_ptr),
+                                  opentelemetry_tracing
+                                      ? std::make_shared<sharded<opentelemetry_state_data>>()
+                                      : nullptr)
+    {}
+
+    /**
+     * Helper function to initialize sharded data in opentelemetry_state.
+     */
+    future<> start() {
+        return _data->start();
+    }
+
+    /**
+     * Helper function to properly stop sharded data in opentelemetry_state.
+     */
+    future<> stop() {
+        return _data->stop();
+    }
+
+    /**
+     * Helper function to collect opentelemetry data from all shards.
+     * It should be called before serializing opentelemetry_state.
+     */
+    future<> collect_data() {
+        return _data->map_reduce(reducer{}, std::identity{}).then([&local_data = _data->local()] (auto data) {
+            local_data = data;
+        });
+    }
 
     /**
      * @return serialized opentelemetry state.
@@ -532,8 +602,11 @@ public:
     bytes serialize() const noexcept {
         bytes serialized{};
 
-        serialize_replicas(serialized);
-        serialize_statement_type(serialized);
+        _data->local().serialize_replicas(serialized);
+        _data->local().serialize_cache_counter(serialized);
+        _data->local().serialize_dma_counter(serialized);
+        _data->local().serialize_dma_size(serialized);
+        _data->local().serialize_statement_type(serialized);
 
         return serialized;
     }
@@ -544,7 +617,7 @@ public:
      * @param replicas list of contacted replicas
      */
     void set_replicas(const inet_address_vector_replica_set& replicas) {
-        _replicas = replicas;
+        _data->local()._replicas = replicas;
     }
 
     /**
@@ -553,14 +626,68 @@ public:
      * @param statement_type type of prepared statement.
      */
     void set_statement_type(const sstring& statement_type) {
-        _statement_type = statement_type;
+        _data->local()._statement_type = statement_type;
+    }
+
+    /**
+     * Increment counter of partitions read from cache.
+     *
+     * @param count number of partitions
+     */
+    void modify_cache_counter(opentelemetry_state_data::cache_counter_t count) {
+        if (_data->local_is_initialized()) {
+            _data->local()._cache_counter += count;
+        }
+    }
+
+    /**
+     * Increment counter of DMA reads.
+     *
+     * @param count number of reads
+     */
+    void modify_dma_counter(opentelemetry_state_data::dma_counter_t count) {
+        if (_data->local_is_initialized()) {
+            _data->local()._dma_counter += count;
+        }
+    }
+
+    /**
+     * Increment number of bytes read in DMA reads.
+     *
+     * @param size number of bytes.
+     */
+    void modify_dma_size(opentelemetry_state_data::dma_size_t size) {
+        if (_data->local_is_initialized()) {
+            _data->local()._dma_size += size;
+        }
+    }
+
+    /**
+     * @return number of partitions that were found in cache
+     */
+    opentelemetry_state_data::cache_counter_t get_cache_counter() const {
+        return _data->local()._cache_counter;
+    }
+
+    /**
+     * @return number of DMA reads that were executed
+    */
+    opentelemetry_state_data::dma_counter_t get_dma_counter() const {
+        return _data->local()._dma_counter;
+    }
+
+    /**
+     * @return number of bytes read in DMA reads
+    */
+    opentelemetry_state_data::dma_size_t get_dma_size() const {
+        return _data->local()._dma_size;
     }
 
     /**
      * @return True if OpenTelemetry trace state is stored.
      */
     bool has_opentelemetry() const noexcept {
-        return _opentelemetry_tracing;
+        return __builtin_expect(bool(_data), false);
     };
 
     /**
@@ -582,6 +709,13 @@ public:
      */
     trace_state& get_tracing() const noexcept {
         return *_state_ptr;
+    }
+
+    /**
+     * @return A pointer to sharded data.
+     */
+    std::shared_ptr<sharded<opentelemetry_state_data>> get_data() const {
+        return _data;
     }
 };
 
@@ -608,6 +742,10 @@ public:
     trace_state_ptr(std::nullptr_t)
         : _state_ptr(nullptr)
     {}
+
+    using cache_counter_t = opentelemetry_state_data::cache_counter_t;
+    using dma_counter_t = opentelemetry_state_data::dma_counter_t;
+    using dma_size_t = opentelemetry_state_data::dma_size_t;
 
     /**
      * @return True if classic trace state is stored.
@@ -849,8 +987,17 @@ inline std::optional<trace_info> make_trace_info(const trace_state_ptr& state) {
         const auto& tr_state_ptr = state.get_tracing_ptr();
 
         if (!tr_state_ptr->ignore_events() && (tr_state_ptr->full_tracing() || (tr_state_ptr->log_slow_query() && !tr_state_ptr->is_in_state(trace_state::state::background)))) {
-            return trace_info{tr_state_ptr->session_id(), tr_state_ptr->type(), tr_state_ptr->write_on_close(), tr_state_ptr->raw_props(), tr_state_ptr->slow_query_threshold_us(), tr_state_ptr->slow_query_ttl_sec(), tr_state_ptr->my_span_id()};
+            auto props = tr_state_ptr->raw_props();
+            props.set(trace_state_props::classic);
+            props.set_if<trace_state_props::opentelemetry>(state.has_opentelemetry());
+            return trace_info{tr_state_ptr->session_id(), tr_state_ptr->type(), tr_state_ptr->write_on_close(), props, tr_state_ptr->slow_query_threshold_us(), tr_state_ptr->slow_query_ttl_sec(), tr_state_ptr->my_span_id()};
         }
+    }
+
+    if (state.has_opentelemetry()) {
+        trace_state_props_set props{};
+        props.set(trace_state_props::opentelemetry);
+        return trace_info{props, state.get_opentelemetry().get_data()};
     }
 
     return std::nullopt;
@@ -878,6 +1025,72 @@ inline void set_statement_type(const trace_state_ptr& p, const sstring& statemen
     if (p.has_opentelemetry()) {
         p.get_opentelemetry_ptr()->set_statement_type(statement_type);
     }
+}
+
+inline void modify_cache_counter(const trace_state_ptr& p, trace_state_ptr::cache_counter_t count) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->modify_cache_counter(count);
+    }
+}
+
+inline void modify_dma_counter(const trace_state_ptr& p, trace_state_ptr::dma_counter_t count) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->modify_dma_counter(count);
+    }
+}
+
+inline void modify_dma_size(const trace_state_ptr& p, trace_state_ptr::dma_size_t size) {
+    if (p.has_opentelemetry()) {
+        p.get_opentelemetry_ptr()->modify_dma_size(size);
+    }
+}
+
+inline trace_state_ptr::cache_counter_t get_cache_counter(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->get_cache_counter();
+    }
+
+    return 0;
+}
+
+inline trace_state_ptr::dma_counter_t get_dma_counter(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->get_dma_counter();
+    }
+
+    return 0;
+}
+
+inline trace_state_ptr::dma_size_t get_dma_size(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->get_dma_size();
+    }
+
+    return 0;
+}
+
+inline future<> start(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->start();
+    }
+
+    return make_ready_future<>();
+}
+
+inline future<> stop(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->stop();
+    }
+
+    return make_ready_future<>();
+}
+
+inline future<> collect_data(const trace_state_ptr& p) {
+    if (p.has_opentelemetry()) {
+        return p.get_opentelemetry_ptr()->collect_data();
+    }
+
+    return make_ready_future<>();
 }
 
 // global_trace_state_ptr is a helper class that may be used for creating spans
@@ -916,7 +1129,7 @@ public:
     // May be invoked across shards.
     trace_state_ptr get() const {
         // optimize the "tracing not enabled" case
-        if (!_ptr.has_tracing()) {
+        if (!_ptr.has_tracing() && !_ptr.has_opentelemetry()) {
             return nullptr;
         }
 

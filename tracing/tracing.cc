@@ -116,11 +116,11 @@ future<> tracing::stop_tracing() {
 }
 
 trace_state_ptr tracing::create_session(trace_type type, trace_state_props_set props, bool opentelemetry_tracing) noexcept {
-    if (!started()) {
-        return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing) : nullptr;
-    }
-
     try {
+        if (!started()) {
+            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing) : nullptr;
+        }
+
         // Don't create a session if its records are likely to be dropped
         if (!may_create_new_session()) {
             return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, opentelemetry_tracing) : nullptr;
@@ -138,18 +138,22 @@ trace_state_ptr tracing::create_session(trace_type type, trace_state_props_set p
 }
 
 trace_state_ptr tracing::create_session(const trace_info& secondary_session_info) noexcept {
-    if (!started()) {
-        return nullptr;
-    }
-
     try {
+        bool opentelemetry_tracing = secondary_session_info.state_props.contains(trace_state_props::opentelemetry);
+        if (!started()) {
+            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, secondary_session_info.otel_data) : nullptr;
+        }
+
         // Don't create a session if its records are likely to be dropped
         if (!may_create_new_session(secondary_session_info.session_id)) {
-            return nullptr;
+            return opentelemetry_tracing ? make_lw_shared<opentelemetry_state>(nullptr, secondary_session_info.otel_data) : nullptr;
         }
 
         ++_active_sessions;
-        return make_lw_shared<trace_state>(secondary_session_info);
+        if (secondary_session_info.state_props.contains(trace_state_props::classic)) {
+            return make_lw_shared<opentelemetry_state>(make_lw_shared<trace_state>(secondary_session_info), secondary_session_info.otel_data);
+        }
+        return make_lw_shared<opentelemetry_state>(nullptr, secondary_session_info.otel_data);
     } catch (...) {
         // return an uninitialized state in case of any error (OOM?)
         return nullptr;

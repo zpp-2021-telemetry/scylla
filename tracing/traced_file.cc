@@ -22,6 +22,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/print.hh>
 
+#include "trace_state.hh"
 #include "tracing/traced_file.hh"
 
 using namespace seastar;
@@ -89,10 +90,12 @@ traced_file_impl::write_dma(uint64_t pos, std::vector<iovec> iov, const io_prior
 future<size_t>
 traced_file_impl::read_dma(uint64_t pos, void* buf, size_t len, const io_priority_class& pc) {
     tracing::trace(_trace_state, "{} scheduling DMA read of {} bytes at position {}", _trace_prefix, len, pos);
+    tracing::modify_dma_counter(_trace_state, 1);
     return get_file_impl(_f)->read_dma(pos, buf, len, pc).then_wrapped([this, pos, len] (future<size_t> f) {
         try {
             auto ret = f.get0();
             tracing::trace(_trace_state, "{} finished DMA read of {} bytes at position {}, successfully read {} bytes", _trace_prefix, len, pos, ret);
+            tracing::modify_dma_size(_trace_state, ret);
             return ret;
         } catch (...) {
             tracing::trace(_trace_state, "{} failed DMA read of {} bytes at position {}: {}", _trace_prefix, len, pos, std::current_exception());
@@ -104,10 +107,12 @@ traced_file_impl::read_dma(uint64_t pos, void* buf, size_t len, const io_priorit
 future<size_t>
 traced_file_impl::read_dma(uint64_t pos, std::vector<iovec> iov, const io_priority_class& pc) {
     tracing::trace(_trace_state, "{} scheduling DMA read at position {}", _trace_prefix, pos);
+    tracing::modify_dma_counter(_trace_state, 1);
     return get_file_impl(_f)->read_dma(pos, std::move(iov), pc).then_wrapped([this, pos] (future<size_t> f) {
         try {
             auto ret = f.get0();
             tracing::trace(_trace_state, "{} finished DMA read at position {}, successfully read {} bytes", _trace_prefix, pos, ret);
+            tracing::modify_dma_size(_trace_state, ret);
             return ret;
         } catch (...) {
             tracing::trace(_trace_state, "{} failed DMA read at position {}: {}", _trace_prefix, pos, std::current_exception());
@@ -229,11 +234,13 @@ traced_file_impl::list_directory(std::function<future<> (directory_entry de)> ne
 future<temporary_buffer<uint8_t>>
 traced_file_impl::dma_read_bulk(uint64_t offset, size_t range_size, const io_priority_class& pc) {
     tracing::trace(_trace_state, "{} scheduling bulk DMA read of size {} at offset {}", _trace_prefix, range_size, offset);
+    tracing::modify_dma_counter(_trace_state, 1);
     return get_file_impl(_f)->dma_read_bulk(offset, range_size, pc).then_wrapped([this, offset, range_size] (future<temporary_buffer<uint8_t>> f) {
         try {
             auto ret = f.get0();
             tracing::trace(_trace_state, "{} finished bulk DMA read of size {} at offset {}, successfully read {} bytes",
                     _trace_prefix, range_size, offset, ret.size());
+            tracing::modify_dma_size(_trace_state, ret.size());
             return ret;
         } catch (...) {
             tracing::trace(_trace_state, "{} failed a bulk DMA read of size {} at offset {}: {}",
